@@ -2,27 +2,29 @@ import React, { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { ArrowLeft, Save, Fuel } from 'lucide-react';
 
-const CombustibleForm = ({ caseId, onBack, onClose }) => {
+const CombustibleForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    cantidad_litros: 0,
-    tipo_combustible: 'nafta',
-    patente_movil: '',
-    marca_movil: '',
-    motivo_viaje: '',
-    destino: ''
+    cantidad_litros: initialData?.cantidad_litros ?? 0,
+    tipo_combustible: initialData?.tipo_combustible ?? 'nafta',
+    patente_movil: initialData?.patente_movil ?? '',
+    marca_movil: initialData?.marca_movil ?? '',
+    motivo_viaje: initialData?.motivo_viaje ?? '',
+    destino: initialData?.destino ?? '',
   });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await supabase.from('cic_combustible').insert({
-        case_id: caseId,
-        ...formData
-      });
+      let error;
+      if (isEditing && recordId) {
+        ({ error } = await supabase.from('cic_combustible').update(formData).eq('id', recordId));
+      } else {
+        ({ error } = await supabase.from('cic_combustible').insert({ case_id: caseId, ...formData }));
+      }
       if (error) throw error;
-      alert('Carga de combustible registrada');
+      alert(isEditing ? 'Carga de combustible actualizada' : 'Carga de combustible registrada');
       onClose();
     } catch (err) {
       console.error(err);
@@ -46,7 +48,9 @@ const CombustibleForm = ({ caseId, onBack, onClose }) => {
           </div>
           <div>
             <h2 className="text-2xl font-black text-white">Carga de Combustible</h2>
-            <p className="text-[10px] uppercase font-black text-yellow-400 tracking-widest mt-1">CIC</p>
+            <p className="text-[10px] uppercase font-black text-yellow-400 tracking-widest mt-1">
+              {isEditing ? '✏ Editando registro' : 'CIC'}
+            </p>
           </div>
         </div>
       </div>
@@ -138,7 +142,7 @@ const CombustibleForm = ({ caseId, onBack, onClose }) => {
           style={{ minHeight: '52px', fontSize: '1rem', fontWeight: 700 }}
         >
           <Save className="w-5 h-5" />
-          {loading ? 'Guardando...' : 'Registrar Carga'}
+          {loading ? 'Guardando...' : isEditing ? '✓ Guardar Cambios' : 'Registrar Carga'}
         </button>
         <button
           type="button"

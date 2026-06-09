@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 const sanitizeDni = (value) => String(value || '').replace(/\D/g, '');
@@ -32,6 +32,8 @@ export default function MesaEntrada({ profile }) {
   const [loadingSave, setLoadingSave] = useState(false);
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('');
+  const [respondidas, setRespondidas] = useState([]);
+  const [loadingRespondidas, setLoadingRespondidas] = useState(false);
   const isSuperAdmin = profile?.role === 'superadmin';
   const areaId = profile?.areas?.id ?? null;
 
@@ -101,6 +103,34 @@ export default function MesaEntrada({ profile }) {
     }
   };
 
+  const fetchRespondidas = async () => {
+    setLoadingRespondidas(true);
+    const { data } = await supabase
+      .from('audiencias')
+      .select(`
+        id, motivo, estado, tipo_respuesta, respuesta, 
+        respondido_at, created_at,
+        persona:persons!person_id(apellido_nombre, dni),
+        area:areas!area_id(name)
+      `)
+      .in('estado', ['ATENDIDO', 'NO_ATENDIDO', 'DERIVADO'])
+      .order('respondido_at', { ascending: false })
+      .limit(20);
+    setRespondidas(data || []);
+    setLoadingRespondidas(false);
+  };
+
+  useEffect(() => {
+    fetchRespondidas();
+    const channel = supabase
+      .channel('mesa-respondidas')
+      .on('postgres_changes', { 
+        event: 'UPDATE', schema: 'public', table: 'audiencias' 
+      }, fetchRespondidas)
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
+
   const statusColors = {
     error:   'bg-red-500/8 border-red-500/20 text-red-400',
     success: 'bg-teal-500/8 border-teal-500/20 text-teal-400',
@@ -109,7 +139,7 @@ export default function MesaEntrada({ profile }) {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center p-4">
+    <div className="min-h-[80vh] flex flex-col items-center p-4 pt-8">
       <div className="w-full max-w-xl">
 
         {/* Header */}
@@ -186,6 +216,86 @@ export default function MesaEntrada({ profile }) {
             </button>
           </form>
         </div>
+      </div>
+
+      {/* Sección respuestas */}
+      <div className="w-full max-w-xl mt-8">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-white">Respuestas recientes</h3>
+          <button 
+            onClick={fetchRespondidas} 
+            className="secondary py-1.5! px-3! text-xs"
+            disabled={loadingRespondidas}
+          >
+            {loadingRespondidas ? 'Actualizando...' : 'Actualizar'}
+          </button>
+        </div>
+
+        {loadingRespondidas ? (
+          <p className="text-xs text-muted text-center py-8">Cargando...</p>
+        ) : respondidas.length === 0 ? (
+          <p className="text-xs text-muted text-center py-8 italic">
+            Sin respuestas registradas aún.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {respondidas.map(r => {
+              const tipoConfig = {
+                atendido:    { label: 'Se atiende',   cls: 'bg-teal-500/10 border-teal-500/20 text-teal-400'   },
+                no_atendido: { label: 'No se atiende', cls: 'bg-red-500/8 border-red-500/20 text-red-400'       },
+                derivado:    { label: 'Derivado',      cls: 'bg-amber-500/8 border-amber-500/20 text-amber-400' },
+              };
+              const cfg = tipoConfig[r.tipo_respuesta] || tipoConfig.atendido;
+
+              return (
+                <div key={r.id} className="card py-3 px-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">
+                        {r.persona?.apellido_nombre || 'Sin nombre'}
+                      </p>
+                      <p className="text-[10px] text-muted font-mono">
+                        DNI {r.persona?.dni || '-'}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-[10px] font-black uppercase tracking-widest 
+                                     px-2.5 py-1 rounded-lg border ${cfg.cls}`}>
+                      {cfg.label}
+                    </span>
+                  </div>
+
+                  {r.motivo && (
+                    <p className="text-xs text-white/40 line-clamp-1">
+                      Motivo: {r.motivo}
+                    </p>
+                  )}
+
+                  {r.respuesta && (
+                    <div className="bg-white/3 border border-white/8 rounded-lg px-3 py-2">
+                      <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-1">
+                        Observación
+                      </p>
+                      <p className="text-xs text-white/70">{r.respuesta}</p>
+                    </div>
+                  )}
+
+                  {r.tipo_respuesta === 'derivado' && r.area?.name && (
+                    <p className="text-[10px] text-amber-400">
+                      → Derivado a: <span className="font-bold">{r.area.name}</span>
+                    </p>
+                  )}
+
+                  {r.respondido_at && (
+                    <p className="text-[9px] text-white/20 font-mono">
+                      Respondido: {new Date(r.respondido_at).toLocaleDateString('es-AR')} {' '}
+                      {new Date(r.respondido_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

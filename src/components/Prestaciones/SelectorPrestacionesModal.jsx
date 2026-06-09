@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   LayoutGrid, 
@@ -12,7 +12,6 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-// Form Components (we'll create these next)
 import ModulosForm from './forms/ModulosForm';
 import TechoForm from './forms/TechoForm';
 import FunebreForm from './forms/FunebreForm';
@@ -22,13 +21,18 @@ import CombustibleForm from './forms/CombustibleForm';
 import EconomicoForm from './forms/EconomicoForm';
 import MedicamentosForm from './forms/MedicamentosForm';
 
-const SelectorPrestacionesModal = ({ isOpen, onClose, caseId }) => {
+// editRecord: { formType, data, recordId, tabla, nombre } — si viene, vamos directo al form en modo edición
+const SelectorPrestacionesModal = ({ isOpen, onClose, caseId, editRecord }) => {
   const [activeForm, setActiveForm] = useState(null);
 
-  // Resetear al cerrar/abrir
-  React.useEffect(() => {
-    if (!isOpen) setActiveForm(null);
-  }, [isOpen]);
+  // Cuando se abre: si hay editRecord, ir directo al form; si no, mostrar selector
+  useEffect(() => {
+    if (!isOpen) {
+      setActiveForm(null);
+    } else if (editRecord?.formType) {
+      setActiveForm(editRecord.formType);
+    }
+  }, [isOpen, editRecord]);
 
   if (!isOpen) return null;
 
@@ -54,16 +58,29 @@ const SelectorPrestacionesModal = ({ isOpen, onClose, caseId }) => {
   ];
 
   const renderForm = () => {
-    const props = { caseId, onBack: () => setActiveForm(null), onClose };
+    // En modo edición pasamos initialData y recordId; en modo nuevo, solo caseId
+    const isEditing = !!(editRecord && editRecord.formType === activeForm);
+    const props = {
+      caseId,
+      onBack: () => {
+        // Si estamos editando, volver atrás cierra el modal (no hay selector que volver)
+        isEditing ? onClose() : setActiveForm(null);
+      },
+      onClose,
+      initialData: isEditing ? editRecord.data : null,
+      recordId: isEditing ? editRecord.recordId : null,
+      isEditing,
+    };
+
     switch (activeForm) {
-      case 'modulos': return <ModulosForm {...props} />;
-      case 'techo': return <TechoForm {...props} />;
-      case 'funebre': return <FunebreForm {...props} />;
-      case 'viajes': return <ViajesForm {...props} />;
-      case 'pasajes': return <PasajesForm {...props} />;
-      case 'combustible': return <CombustibleForm {...props} />;
-      case 'economico': return <EconomicoForm {...props} />;
-      case 'medicamentos': return <MedicamentosForm {...props} />;
+      case 'modulos':      return <ModulosForm      {...props} />;
+      case 'techo':        return <TechoForm         {...props} />;
+      case 'funebre':      return <FunebreForm       {...props} />;
+      case 'viajes':       return <ViajesForm        {...props} />;
+      case 'pasajes':      return <PasajesForm       {...props} />;
+      case 'combustible':  return <CombustibleForm   {...props} />;
+      case 'economico':    return <EconomicoForm     {...props} />;
+      case 'medicamentos': return <MedicamentosForm  {...props} />;
       default: return null;
     }
   };
@@ -74,22 +91,18 @@ const SelectorPrestacionesModal = ({ isOpen, onClose, caseId }) => {
         
         {!activeForm ? (
           <>
-            {/* Main Selector Header */}
-            <div className="p-10 border-b border-white/5 flex items-center justify-between">
+            {/* Selector principal */}
+            <div className="p-10 border-b border-white/5 flex items-center justify-between shrink-0">
               <div>
                 <h2 className="text-3xl font-black tracking-tight text-white">Selector de Prestaciones</h2>
                 <p className="text-[10px] uppercase font-bold text-accent tracking-[0.3em] mt-2">Gestión de recursos municipales</p>
               </div>
-              <button 
-                onClick={onClose}
-                className="bg-white/5 hover:bg-white/10 p-4 rounded-3xl transition-all active:scale-90"
-              >
+              <button onClick={onClose} className="bg-white/5 hover:bg-white/10 p-4 rounded-3xl transition-all active:scale-90">
                 <X className="w-6 h-6 text-white" />
               </button>
             </div>
 
-            {/* Grid Content */}
-            <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-10 custom-scrollbar" style={{ minHeight: 0 }}>
               <div className="space-y-12">
                 {categories.map((cat, idx) => (
                   <div key={idx} className="space-y-6">
@@ -118,7 +131,6 @@ const SelectorPrestacionesModal = ({ isOpen, onClose, caseId }) => {
             </div>
           </>
         ) : (
-          // ✅ FIX: Este wrapper le da altura real al formulario para que pueda expandirse
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             {renderForm()}
           </div>

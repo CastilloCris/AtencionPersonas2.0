@@ -181,12 +181,38 @@
     font-size: 0.75rem;
     color: #BFBFBF;
   }
+
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(212, 175, 55, 0.5) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(212, 175, 55, 0.5);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(212, 175, 55, 0.8);
+    background-clip: content-box;
+  }
 }
 
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(197, 161, 0, 0.28); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.45); }
+::-webkit-scrollbar-thumb { background: rgba(197, 161, 0, 0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.55); }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading::after {

@@ -1,5 +1,168 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { X, Save, Loader2 } from 'lucide-react';
+
+// ── Modal de edición de caso ─────────────────────────────────────────────────
+const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
+  const [form, setForm] = useState({
+    motivo:      caseData.motivo      || '',
+    solucion:    caseData.solucion    || '',
+    ingresos:    caseData.ingresos    ?? '',
+    actual_date: caseData.actual_date ? caseData.actual_date.split('T')[0] : (caseData.created_at?.split('T')[0] || ''),
+    estado:      caseData.estado      || 'abierto',
+    // Datos de la persona
+    telefono:    person?.telefono     || '',
+    domicilio:   person?.domicilio    || '',
+    trabaja:     person?.trabaja_actualmente || '',
+    estado_civil: person?.estado_civil || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      // Actualizar caso
+      const { error: cErr } = await supabase.from('cases').update({
+        motivo:      form.motivo      || null,
+        solucion:    form.solucion    || null,
+        ingresos:    parseFloat(form.ingresos) || 0,
+        actual_date: form.actual_date || null,
+        estado:      form.estado,
+      }).eq('id', caseData.id);
+      if (cErr) throw cErr;
+
+      // Actualizar persona si tenemos person_id
+      if (caseData.person_id) {
+        const { error: pErr } = await supabase.from('persons').update({
+          telefono:          form.telefono          || null,
+          domicilio:         form.domicilio         || null,
+          trabaja_actualmente: form.trabaja         || null,
+          estado_civil:      form.estado_civil      || null,
+          updated_at:        new Date().toISOString(),
+        }).eq('id', caseData.person_id);
+        if (pErr) throw pErr;
+      }
+
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const areaName = areas.find(a => a.id === caseData.area_id)?.name || '-';
+
+  return (
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-xl z-6000 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-card w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-[32px] border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.5)] flex flex-col">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-xl font-black text-white">Editar Caso</h2>
+            <p className="text-[10px] uppercase font-bold text-accent tracking-widest mt-1">
+              {person?.apellido_nombre || caseData.apellido_nombre} · {areaName}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all">
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto custom-scrollbar" style={{ minHeight: 0 }}>
+          <div className="p-6 space-y-5">
+
+            {/* Datos del caso */}
+            <p className="text-[10px] font-black text-muted uppercase tracking-widest">Datos del Caso</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Fecha del Caso</label>
+                <input type="date" value={form.actual_date} onChange={e => setForm(p => ({ ...p, actual_date: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Estado</label>
+                <select value={form.estado} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))} className="min-h-[44px]">
+                  <option value="abierto">Abierto</option>
+                  <option value="en_seguimiento">En seguimiento</option>
+                  <option value="resuelto">Resuelto</option>
+                  <option value="cerrado">Cerrado</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Ingresos Estimados ($)</label>
+              <input type="number" step="0.01" placeholder="0.00" value={form.ingresos} onChange={e => setForm(p => ({ ...p, ingresos: e.target.value }))} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Motivo de la Consulta</label>
+              <textarea rows="3" placeholder="Describa brevemente el motivo..." value={form.motivo} onChange={e => setForm(p => ({ ...p, motivo: e.target.value }))} required />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Solución / Respuesta</label>
+              <textarea rows="3" placeholder="Describa la solución o respuesta dada..." value={form.solucion} onChange={e => setForm(p => ({ ...p, solucion: e.target.value }))} />
+            </div>
+
+            {/* Datos de la persona */}
+            <p className="text-[10px] font-black text-muted uppercase tracking-widest pt-2 border-t border-white/5">Datos de la Persona</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Teléfono / Celular</label>
+                <input placeholder="Ej: 3512345678" value={form.telefono} onChange={e => setForm(p => ({ ...p, telefono: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Situación Laboral</label>
+                <input placeholder="Ej: Empleado, Desempleado..." value={form.trabaja} onChange={e => setForm(p => ({ ...p, trabaja: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Domicilio</label>
+              <input placeholder="Calle, Número, Barrio..." value={form.domicilio} onChange={e => setForm(p => ({ ...p, domicilio: e.target.value }))} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Estado Civil</label>
+              <select value={form.estado_civil} onChange={e => setForm(p => ({ ...p, estado_civil: e.target.value }))} className="min-h-[44px]">
+                <option value="">Seleccione...</option>
+                <option value="soltero">Soltero/a</option>
+                <option value="casado">Casado/a</option>
+                <option value="divorciado">Divorciado/a</option>
+                <option value="viudo">Viudo/a</option>
+                <option value="union">Unión Convivencial</option>
+              </select>
+            </div>
+
+            {error && (
+              <p className="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                ⚠ {error}
+              </p>
+            )}
+          </div>
+
+          {/* Footer sticky */}
+          <div className="p-6 border-t border-white/5 flex gap-3 bg-white/2 shrink-0">
+            <button type="submit" disabled={saving}
+              className="primary flex-1 py-3! flex items-center justify-center gap-2 font-black">
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Save className="w-4 h-4" /> Guardar Cambios</>}
+            </button>
+            <button type="button" onClick={onClose} className="secondary px-8! py-3!">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 const CasesList = ({ areas, profile, onViewPerson }) => {
   const [filters, setFilters] = useState({
@@ -12,10 +175,11 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
     prestacion: ''
   });
   const [grouped, setGrouped] = useState([]);
-  const [expanded, setExpanded] = useState({}); // personId -> boolean
+  const [expanded, setExpanded] = useState({});
   const [status, setStatus] = useState('Aplicá filtros y cargá casos.');
   const [loading, setLoading] = useState(false);
   const [prestacionesList, setPrestacionesList] = useState([]);
+  const [editCase, setEditCase] = useState(null);   // { caseData, person }
 
   // Determinar si el usuario puede ver todos los casos
   // superadmin siempre puede ver todo; operadores según can_view_all
@@ -373,6 +537,17 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                       Ver Ficha
                     </button>
                     {!isOperator && (
+                      <button
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold
+                                   bg-accent/15 border border-accent/30 text-accent
+                                   hover:bg-accent/25 hover:border-accent/50
+                                   active:scale-95 transition-all min-h-[36px]"
+                        onClick={() => setEditCase({ caseData: lastCase, person: { apellido_nombre: person.apellido_nombre, ...lastCase } })}
+                      >
+                        ✏ Editar
+                      </button>
+                    )}
+                    {!isOperator && (
                       <select
                         value={lastCase.estado || 'abierto'}
                         onChange={async (e) => {
@@ -449,32 +624,42 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                   <div className="border-t border-white/5 divide-y divide-white/5">
                     {person.cases.map((c, idx) => (
                       <div key={c.id}>
-                        <div className="px-5 py-3 flex flex-wrap items-center gap-3 bg-white/2 hover:bg-white/5 transition-colors">
-                          <span className="text-[9px] font-mono text-muted/50 w-20 shrink-0">
-                            {new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR')}
-                          </span>
-                          <span className="pill text-[9px]">{renderAreaName(c)}</span>
-                          <span className="text-[10px] text-muted flex-1 truncate" title={c.motivo}>{c.motivo || 'Sin motivo'}</span>
-                          <span className="text-[10px] font-mono text-accent">${c.ingresos?.toLocaleString() || '0'}</span>
-                          <span className="text-[9px] text-muted/40">{renderOwner(c)}</span>
-                          {!isOperator && (
-                            <select
-                              value={c.estado || 'abierto'}
-                              onChange={async (e) => {
-                                const nuevoEstado = e.target.value;
-                                await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', c.id);
-                                fetchCases();
-                              }}
-                              className="text-[9px] py-1! px-2! min-h-[28px] rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <option value="abierto">Abierto</option>
-                              <option value="en_seguimiento">En seguimiento</option>
-                              <option value="resuelto">Resuelto</option>
-                              <option value="cerrado">Cerrado</option>
-                            </select>
-                          )}
-                        </div>
+                          <div className="px-5 py-3 flex flex-wrap items-center gap-3 bg-white/2 hover:bg-white/5 transition-colors">
+                            <span className="text-[9px] font-mono text-muted/50 w-20 shrink-0">
+                              {new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR')}
+                            </span>
+                            <span className="pill text-[9px]">{renderAreaName(c)}</span>
+                            <span className="text-[10px] text-muted flex-1 truncate" title={c.motivo}>{c.motivo || 'Sin motivo'}</span>
+                            <span className="text-[10px] font-mono text-accent">${c.ingresos?.toLocaleString() || '0'}</span>
+                            <span className="text-[9px] text-muted/40">{renderOwner(c)}</span>
+                            {!isOperator && (
+                              <button
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[9px] font-bold
+                                           bg-accent/12 border border-accent/25 text-accent
+                                           hover:bg-accent/20 active:scale-95 transition-all"
+                                onClick={() => setEditCase({ caseData: c, person: { apellido_nombre: person.apellido_nombre, ...c } })}
+                              >
+                                ✏ Editar
+                              </button>
+                            )}
+                            {!isOperator && (
+                              <select
+                                value={c.estado || 'abierto'}
+                                onChange={async (e) => {
+                                  const nuevoEstado = e.target.value;
+                                  await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', c.id);
+                                  fetchCases();
+                                }}
+                                className="text-[9px] py-1! px-2! min-h-[28px] rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="abierto">Abierto</option>
+                                <option value="en_seguimiento">En seguimiento</option>
+                                <option value="resuelto">Resuelto</option>
+                                <option value="cerrado">Cerrado</option>
+                              </select>
+                            )}
+                          </div>
                         {/* Prestaciones - según si hay filtro o no */}
                         {filters.prestacion && c.prestaciones_filtradas?.length > 0 && (
                           <div className="w-full mt-2 pt-2 px-5 pb-3 border-t border-white/5">
@@ -539,6 +724,17 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
           })}
         </div>
       </section>
+
+      {/* Modal de edición */}
+      {editCase && (
+        <EditCaseModal
+          caseData={editCase.caseData}
+          person={editCase.person}
+          areas={areas}
+          onClose={() => setEditCase(null)}
+          onSaved={() => { fetchCases(filters); }}
+        />
+      )}
     </section>
   );
 };

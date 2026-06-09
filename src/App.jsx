@@ -31,6 +31,7 @@ function App() {
   const [currentPerson, setCurrentPerson] = useState(null);
   const [lastCaseId, setLastCaseId] = useState(null);
   const [selectorCaseId, setSelectorCaseId] = useState(null);
+  const [editRecord, setEditRecord] = useState(null); // { formType, data, recordId, tabla, nombre }
   const [areas, setAreas] = useState([]);
 
   const areaName = profile?.areas?.name || '';
@@ -169,7 +170,8 @@ function App() {
                     lastCaseId={lastCaseId}
                     setLastCaseId={setLastCaseId}
                     onViewPerson={handleViewPerson}
-                    onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setIsSelectorOpen(true); }}
+                    onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }}
+                    onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }}
                   />
             )}
             {activeScreen === 'screenCases' && (
@@ -181,25 +183,25 @@ function App() {
             {activeScreen === 'screenMesaEntrada' && (
               (isSuperAdmin || isMesaEntrada)
                 ? <MesaEntrada profile={profile} />
-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setIsSelectorOpen(true); }} />
+                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
             )}
 
             {activeScreen === 'screenDashboardIntendencia' && (
               (isSuperAdmin || isIntendencia)
                 ? <DashboardIntendencia profile={profile} onViewPerson={handleViewPerson} />
-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setIsSelectorOpen(true); }} />
+                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
             )}
 
             {activeScreen === 'screenDashboardArea' && (
               (isSuperAdmin || isArea)
                 ? <DashboardArea profile={profile} onViewPerson={handleViewPerson} />
-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setIsSelectorOpen(true); }} />
+                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
             )}
 
             {activeScreen === 'screenDashboardFarmacia' && (
               (isSuperAdmin || isFarmacia)
                 ? <DashboardFarmacia profile={profile} />
-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setIsSelectorOpen(true); }} />
+                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
             )}
 
             {activeScreen === 'screenPersonDetail' && (
@@ -241,8 +243,9 @@ function App() {
       {isSelectorOpen && (
         <SelectorPrestacionesModal
           isOpen={isSelectorOpen}
-          onClose={() => { setIsSelectorOpen(false); setSelectorCaseId(null); }}
+          onClose={() => { setIsSelectorOpen(false); setSelectorCaseId(null); setEditRecord(null); }}
           caseId={selectorCaseId || lastCaseId}
+          editRecord={editRecord}
         />
       )}
     </div>

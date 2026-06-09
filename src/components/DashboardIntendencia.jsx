@@ -21,6 +21,9 @@ export default function DashboardIntendencia({ profile, onViewPerson }) {
   const [audiencias, setAudiencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [derivandoId, setDerivandoId] = useState(null);
+  const [respondiendo, setRespondiendo] = useState(null);
+  // { id, tipo: 'atendido' | 'no_atendido' | 'derivado' }
+  const [respuestaTexto, setRespuestaTexto] = useState('');
   const [areas, setAreas] = useState([]);
 
   const fetchAudiencias = useCallback(async () => {
@@ -55,9 +58,21 @@ export default function DashboardIntendencia({ profile, onViewPerson }) {
     supabase.from('areas').select('id, name').then(({ data }) => setAreas(data || []));
   }, []);
 
-  const handleMarkAttended = async (id) => {
-    await supabase.from('audiencias').update({ estado: 'ATENDIDO' }).eq('id', id);
+  const handleResponder = async (id, tipo, areaDestinoId = null) => {
+    const updateData = {
+      respuesta: respuestaTexto || null,
+      tipo_respuesta: tipo,
+      respondido_at: new Date().toISOString(),
+      estado: tipo === 'derivado' ? 'DERIVADO' : tipo === 'atendido' ? 'ATENDIDO' : 'NO_ATENDIDO',
+    };
+    if (tipo === 'derivado' && areaDestinoId) {
+      updateData.area_id = areaDestinoId;
+    }
+    await supabase.from('audiencias').update(updateData).eq('id', id);
     setAudiencias(prev => prev.filter(a => a.id !== id));
+    setRespondiendo(null);
+    setRespuestaTexto('');
+    setDerivandoId(null);
   };
 
   const handleChangePrioridad = async (id, val) => {
@@ -67,12 +82,6 @@ export default function DashboardIntendencia({ profile, onViewPerson }) {
       return prev.map(a => a.id === id ? { ...a, prioridad: val } : a)
         .sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2));
     });
-  };
-
-  const handleDerivar = async (id, areaDestinoId) => {
-    await supabase.from('audiencias').update({ estado: 'DERIVADO', area_id: areaDestinoId }).eq('id', id);
-    setAudiencias(prev => prev.filter(a => a.id !== id));
-    setDerivandoId(null);
   };
 
   const urgentes = audiencias.filter(a => a.prioridad === 'urgente').length;
@@ -119,7 +128,6 @@ export default function DashboardIntendencia({ profile, onViewPerson }) {
           {audiencias.map((a) => {
             const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
             const fechaHora = new Date(a.created_at);
-            const isDerivando = derivandoId === a.id;
 
             return (
               <div
@@ -156,7 +164,9 @@ export default function DashboardIntendencia({ profile, onViewPerson }) {
                   </div>
 
                   {/* Acciones */}
-                  <div className="flex flex-col gap-2 w-full md:w-48 shrink-0">
+                  <div className="flex flex-col gap-2 w-full md:w-52 shrink-0">
+
+                    {/* Select de prioridad — sin cambios */}
                     <select
                       value={a.prioridad || 'normal'}
                       onChange={e => handleChangePrioridad(a.id, e.target.value)}
@@ -168,52 +178,109 @@ export default function DashboardIntendencia({ profile, onViewPerson }) {
                       <option value="urgente">⚡ Urgente</option>
                     </select>
 
-                    {isDerivando ? (
-                      <div className="flex flex-col gap-1.5">
-                        <p className="text-[10px] text-muted px-1 mb-0.5">Derivar a:</p>
-                        {areas.filter(ar => {
-                          const n = ar.name?.toLowerCase();
-                          return n !== 'mesa de entrada' && n !== 'intendencia';
-                        }).map(ar => (
+                    {/* Ver ficha */}
+                    <button
+                      className="secondary w-full py-2 text-xs"
+                      onClick={() => onViewPerson?.(a.persona?.id || a.person_id, 'screenDashboardIntendencia')}
+                      disabled={!a.persona?.id && !a.person_id}
+                    >
+                      Ver ficha
+                    </button>
+
+                    {/* Panel de respuesta */}
+                    {respondiendo?.id === a.id ? (
+                      <div className="flex flex-col gap-2 p-3 rounded-xl bg-white/3 border border-white/8">
+                        
+                        <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                          Respuesta para Mesa de Entrada
+                        </p>
+
+                        <textarea
+                          placeholder="Observaciones / detalle de la respuesta (opcional)..."
+                          value={respuestaTexto}
+                          onChange={e => setRespuestaTexto(e.target.value)}
+                          rows={2}
+                          className="text-xs resize-none"
+                        />
+
+                        {/* Si eligió derivar: mostrar selector de área */}
+                        {respondiendo.tipo === 'derivado' && (
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[10px] text-muted px-0.5">Derivar a:</p>
+                            {areas.filter(ar => {
+                              const n = ar.name?.toLowerCase();
+                              return n !== 'mesa de entrada' && n !== 'intendencia';
+                            }).map(ar => (
+                              <button
+                                key={ar.id}
+                                onClick={() => handleResponder(a.id, 'derivado', ar.id)}
+                                className="w-full text-left px-3 py-2 rounded-lg bg-white/4 border 
+                                           border-white/8 text-xs text-white/60 hover:bg-accent2/10 
+                                           hover:text-accent hover:border-accent/20 transition-all"
+                              >
+                                → {ar.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Si eligió atendido o no_atendido: botón confirmar */}
+                        {respondiendo.tipo !== 'derivado' && (
                           <button
-                            key={ar.id}
-                            onClick={() => handleDerivar(a.id, ar.id)}
-                            className="w-full text-left px-3 py-2 rounded-lg bg-white/4 border border-white/8 text-xs text-white/60 hover:bg-accent2/10 hover:text-accent hover:border-accent/20 transition-all"
+                            onClick={() => handleResponder(a.id, respondiendo.tipo)}
+                            className={`w-full py-2 text-xs font-bold rounded-xl transition-all ${
+                              respondiendo.tipo === 'atendido'
+                                ? 'bg-teal-500/15 border border-teal-500/25 text-teal-400 hover:bg-teal-500/25'
+                                : 'bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20'
+                            }`}
                           >
-                            → {ar.name}
+                            {respondiendo.tipo === 'atendido' ? '✓ Confirmar atención' : '✗ Confirmar no atención'}
                           </button>
-                        ))}
+                        )}
+
                         <button
-                          onClick={() => setDerivandoId(null)}
-                          className="w-full px-3 py-2 rounded-lg text-xs text-muted hover:text-white transition-colors"
+                          onClick={() => { setRespondiendo(null); setRespuestaTexto(''); }}
+                          className="w-full py-1.5 text-xs text-muted hover:text-white transition-colors"
                         >
                           Cancelar
                         </button>
                       </div>
+
                     ) : (
-                      <div className="flex gap-2">
-                        <button
-                          className="secondary flex-1 py-2 text-xs"
-                          onClick={() => onViewPerson?.(a.persona?.id || a.person_id, 'screenDashboardIntendencia')}
-                          disabled={!a.persona?.id && !a.person_id}
-                        >
-                          Ver ficha
-                        </button>
-                        <button
-                          className="flex-1 py-2 text-xs rounded-xl border border-amber-500/25 bg-amber-500/8 text-amber-400 hover:bg-amber-500/15 transition-all"
-                          onClick={() => setDerivandoId(a.id)}
-                        >
-                          Derivar
-                        </button>
+
+                      /* Botones de respuesta rápida */
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-[9px] font-black text-white/25 uppercase tracking-widest px-0.5">
+                          Responder a Mesa de Entrada
+                        </p>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button
+                            onClick={() => { setRespondiendo({ id: a.id, tipo: 'atendido' }); setRespuestaTexto(''); }}
+                            className="py-2 text-[10px] font-bold rounded-xl bg-teal-500/10 border 
+                                       border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all"
+                            title="Se atiende"
+                          >
+                            ✓ Atiende
+                          </button>
+                          <button
+                            onClick={() => { setRespondiendo({ id: a.id, tipo: 'no_atendido' }); setRespuestaTexto(''); }}
+                            className="py-2 text-[10px] font-bold rounded-xl bg-red-500/8 border 
+                                       border-red-500/18 text-red-400 hover:bg-red-500/15 transition-all"
+                            title="No se atiende"
+                          >
+                            ✗ No atiende
+                          </button>
+                          <button
+                            onClick={() => { setRespondiendo({ id: a.id, tipo: 'derivado' }); setRespuestaTexto(''); }}
+                            className="py-2 text-[10px] font-bold rounded-xl bg-amber-500/8 border 
+                                       border-amber-500/20 text-amber-400 hover:bg-amber-500/15 transition-all"
+                            title="Derivar a otra área"
+                          >
+                            → Deriva
+                          </button>
+                        </div>
                       </div>
                     )}
-
-                    <button
-                      className="primary w-full py-2 text-xs"
-                      onClick={() => handleMarkAttended(a.id)}
-                    >
-                      ✓ Marcar atendida
-                    </button>
                   </div>
                 </div>
               </div>
