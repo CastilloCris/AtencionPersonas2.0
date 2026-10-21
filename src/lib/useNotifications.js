@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from './supabase';
 
 export function useNotifications(profile) {
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Cada notificación lleva su propio estado de lectura; el contador se calcula a partir de la lista.
+  // Antes el contador era un número aparte que bajaba con CUALQUIER cambio en audiencias,
+  // aunque fuera de otra área, y podía quedar en 0 con derivaciones sin leer.
   const [notifications, setNotifications] = useState([]);
+  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
   const knownIds = useRef(new Set());
 
   const isSuperAdmin = profile?.role === 'superadmin';
@@ -33,10 +36,10 @@ export function useNotifications(profile) {
       motivo:        row.motivo               || 'Sin motivo',
       prioridad:     row.prioridad            || 'normal',
       timestamp:     new Date(),
+      read:          false,
     };
 
-    setNotifications(prev => [notif, ...prev].slice(0, 20));
-    setUnreadCount(prev => prev + 1);
+    setNotifications(prev => [notif, ...prev.filter(n => n.id !== notif.id)].slice(0, 20));
   }, []);
 
   useEffect(() => {
@@ -83,27 +86,26 @@ export function useNotifications(profile) {
         { event: 'UPDATE', schema: 'public', table: 'audiencias' },
         async (payload) => {
           const row = payload.new;
-          const old = payload.old;
 
-          const fueDerivada    = row.estado === 'DERIVADO' && old.estado !== 'DERIVADO';
+          // No dependemos de payload.old: sin REPLICA IDENTITY FULL viene vacío, y con él
+          // una re-derivación entre áreas (DERIVADO → DERIVADO) no se notificaba.
+          const estaDerivada   = row.estado === 'DERIVADO';
           const esParaNosotros = isSuperAdmin || row.area_id === areaId;
 
-          if (fueDerivada && esParaNosotros && !knownIds.current.has(row.id)) {
+          if (estaDerivada && esParaNosotros && !knownIds.current.has(row.id)) {
             knownIds.current.add(row.id);
             await agregarNotificacion(row);
           }
 
-          // Si ya no está DERIVADO, sacarla de la lista
-          if (row.estado !== 'DERIVADO') {
+          // Si ya no está DERIVADO (o se derivó a otra área), sacarla de la lista.
+          // Solo afecta a notificaciones que estaban en la lista; el contador se recalcula solo.
+          if (row.estado !== 'DERIVADO' || (!isSuperAdmin && row.area_id !== areaId)) {
             setNotifications(prev => prev.filter(n => n.id !== row.id));
-            setUnreadCount(prev => Math.max(0, prev - 1));
+            knownIds.current.delete(row.id);
           }
         }
       )
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[Notif] Canal suscrito:', channelName);
-        }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[Notif] Error en canal:', channelName, status);
         }
@@ -115,12 +117,13 @@ export function useNotifications(profile) {
   // Re-ejecutar si cambia el perfil o el área (ej: admin cambia de área)
   }, [profile, isSuperAdmin, areaId, agregarNotificacion]);
 
-  const markAllRead = useCallback(() => setUnreadCount(0), []);
+  const markAllRead = useCallback(() => {
+    setNotifications(prev => prev.some(n => !n.read) ? prev.map(n => ({ ...n, read: true })) : prev);
+  }, []);
 
   const clearNotification = useCallback((id) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
-    setUnreadCount(prev => Math.max(0, prev - 1));
   }, []);
 
   return { unreadCount, notifications, markAllRead, clearNotification };
-}
+}

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { ArrowLeft, Save, Truck } from 'lucide-react';
+import { hoyLocal } from '../../../lib/fechas';
 
 const ViajesForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     destino: initialData?.destino ?? '',
-    fecha: initialData?.fecha ?? new Date().toISOString().split('T')[0],
+    fecha: initialData?.fecha ?? hoyLocal(),
     hora_salida_wanda: initialData?.hora_salida_wanda ?? '',
     hora_llegada_destino: initialData?.hora_llegada_destino ?? '',
     hora_salida_destino: initialData?.hora_salida_destino ?? '',

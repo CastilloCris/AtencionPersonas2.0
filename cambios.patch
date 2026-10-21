@@ -1,0 +1,1208 @@
+diff --git a/src/App.jsx b/src/App.jsx
+index cab9bc0..1f2cfd4 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -33,6 +33,8 @@ function App() {
+   const [selectorCaseId, setSelectorCaseId] = useState(null);
+   const [editRecord, setEditRecord] = useState(null); // { formType, data, recordId, tabla, nombre }
+   const [areas, setAreas] = useState([]);
++  // Se incrementa al cerrar el modal de prestaciones para que el historial se recargue
++  const [prestacionesVersion, setPrestacionesVersion] = useState(0);
+ 
+   const areaName = profile?.areas?.name || '';
+   const isSuperAdmin = profile?.role === 'superadmin';
+@@ -122,6 +124,22 @@ function App() {
+ 
+   if (!session) return <Login />;
+ 
++  // Un único Dashboard (antes estaba copiado 4 veces con las mismas 9 props)
++  const renderDashboard = () => (
++    <Dashboard
++      profile={profile}
++      areas={areas}
++      currentPerson={currentPerson}
++      setCurrentPerson={setCurrentPerson}
++      lastCaseId={lastCaseId}
++      setLastCaseId={setLastCaseId}
++      onViewPerson={handleViewPerson}
++      prestacionesVersion={prestacionesVersion}
++      onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }}
++      onEditPrestacion={(rec) => { setSelectorCaseId(rec.caseId || lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }}
++    />
++  );
++
+   return (
+     <div className="flex min-h-screen bg-bg">
+       <Sidebar
+@@ -162,17 +180,7 @@ function App() {
+                     </p>
+                   </div>
+                 )
+-                : <Dashboard
+-                    profile={profile}
+-                    areas={areas}
+-                    currentPerson={currentPerson}
+-                    setCurrentPerson={setCurrentPerson}
+-                    lastCaseId={lastCaseId}
+-                    setLastCaseId={setLastCaseId}
+-                    onViewPerson={handleViewPerson}
+-                    onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }}
+-                    onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }}
+-                  />
++                : renderDashboard()
+             )}
+             {activeScreen === 'screenCases' && (
+               <CasesList areas={areas} profile={profile} onViewPerson={handleViewPerson} />
+@@ -183,25 +191,25 @@ function App() {
+             {activeScreen === 'screenMesaEntrada' && (
+               (isSuperAdmin || isMesaEntrada)
+                 ? <MesaEntrada profile={profile} />
+-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
++                : renderDashboard()
+             )}
+ 
+             {activeScreen === 'screenDashboardIntendencia' && (
+               (isSuperAdmin || isIntendencia)
+                 ? <DashboardIntendencia profile={profile} onViewPerson={handleViewPerson} />
+-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
++                : renderDashboard()
+             )}
+ 
+             {activeScreen === 'screenDashboardArea' && (
+               (isSuperAdmin || isArea)
+                 ? <DashboardArea profile={profile} onViewPerson={handleViewPerson} />
+-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
++                : renderDashboard()
+             )}
+ 
+             {activeScreen === 'screenDashboardFarmacia' && (
+               (isSuperAdmin || isFarmacia)
+                 ? <DashboardFarmacia profile={profile} />
+-                : <Dashboard profile={profile} areas={areas} currentPerson={currentPerson} setCurrentPerson={setCurrentPerson} lastCaseId={lastCaseId} setLastCaseId={setLastCaseId} onViewPerson={handleViewPerson} onOpenSelector={(caseId) => { setSelectorCaseId(caseId || lastCaseId); setEditRecord(null); setIsSelectorOpen(true); }} onEditPrestacion={(rec) => { setSelectorCaseId(lastCaseId); setEditRecord(rec); setIsSelectorOpen(true); }} />
++                : renderDashboard()
+             )}
+ 
+             {activeScreen === 'screenPersonDetail' && (
+@@ -243,7 +251,7 @@ function App() {
+       {isSelectorOpen && (
+         <SelectorPrestacionesModal
+           isOpen={isSelectorOpen}
+-          onClose={() => { setIsSelectorOpen(false); setSelectorCaseId(null); setEditRecord(null); }}
++          onClose={() => { setIsSelectorOpen(false); setSelectorCaseId(null); setEditRecord(null); setPrestacionesVersion(v => v + 1); }}
+           caseId={selectorCaseId || lastCaseId}
+           editRecord={editRecord}
+         />
+diff --git a/src/components/Cases/CasesList.jsx b/src/components/Cases/CasesList.jsx
+index cb2fb78..6808e03 100644
+--- a/src/components/Cases/CasesList.jsx
++++ b/src/components/Cases/CasesList.jsx
+@@ -1,6 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase } from '../../lib/supabase';
+ import { X, Save, Loader2 } from 'lucide-react';
++import { hoyLocal, formatFecha } from '../../lib/fechas';
+ 
+ // ── Modal de edición de caso ─────────────────────────────────────────────────
+ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
+@@ -426,7 +427,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+             c.solucion || '-',
+             c.ingresos || 0,
+             c.estado   || 'abierto',
+-            new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR'),
++            formatFecha(c.actual_date || c.created_at),
+             prestNombres,
+             prestDetalles
+           ]);
+@@ -452,7 +453,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+ 
+       XLSX.utils.book_append_sheet(wb, ws, 'Atenciones');
+ 
+-      const fecha = new Date().toISOString().split('T')[0];
++      const fecha = hoyLocal();
+       XLSX.writeFile(wb, `atenciones_${fecha}.xlsx`);
+     } catch (err) {
+       console.error(err);
+@@ -670,7 +671,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                   <span className="text-[10px] text-muted truncate max-w-50" title={lastCase.motivo}>{lastCase.motivo || 'Sin motivo'}</span>
+                   <span className="text-[10px] font-mono text-accent ml-auto">${lastCase.ingresos?.toLocaleString() || '0'}</span>
+                   <span className="text-[10px] text-muted/50 font-mono">
+-                    {new Date(lastCase.actual_date || lastCase.created_at).toLocaleDateString('es-AR')}
++                    {formatFecha(lastCase.actual_date || lastCase.created_at)}
+                   </span>
+                   {lastCase.prestaciones_filtradas?.length > 0 && filters.prestacion && (
+                     <span className="flex items-center gap-1 bg-green-500/10 border 
+@@ -702,7 +703,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                       <div key={c.id}>
+                           <div className="px-5 py-3 flex flex-wrap items-center gap-3 bg-white/2 hover:bg-white/5 transition-colors">
+                             <span className="text-[9px] font-mono text-muted/50 w-20 shrink-0">
+-                              {new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR')}
++                              {formatFecha(c.actual_date || c.created_at)}
+                             </span>
+                             <span className="pill text-[9px]">{renderAreaName(c)}</span>
+                             <span className="text-[10px] text-muted flex-1 truncate" title={c.motivo}>{c.motivo || 'Sin motivo'}</span>
+diff --git a/src/components/Dashboard/Dashboard.jsx b/src/components/Dashboard/Dashboard.jsx
+index 7e71130..f0e38f6 100644
+--- a/src/components/Dashboard/Dashboard.jsx
++++ b/src/components/Dashboard/Dashboard.jsx
+@@ -3,7 +3,7 @@ import NewCaseForm from './NewCaseForm';
+ import FamilyGroupSection from './FamilyGroupSection';
+ import PrestacionesSection from './PrestacionesSection';
+ 
+-const Dashboard = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId, setLastCaseId, onViewPerson, onOpenSelector, onEditPrestacion }) => {
++const Dashboard = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId, setLastCaseId, onViewPerson, onOpenSelector, onEditPrestacion, prestacionesVersion }) => {
+   return (
+     <div className="space-y-8 animate-in fade-in duration-700">
+       <div className="grid lg:grid-cols-1 gap-8">
+@@ -22,6 +22,7 @@ const Dashboard = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId
+         <FamilyGroupSection currentPerson={currentPerson} />
+         <PrestacionesSection 
+           lastCaseId={lastCaseId} 
++          prestacionesVersion={prestacionesVersion}
+           onOpenSelector={onOpenSelector}
+           onEditPrestacion={onEditPrestacion}
+         />
+diff --git a/src/components/Dashboard/FamilyGroupSection.jsx b/src/components/Dashboard/FamilyGroupSection.jsx
+index 78d8cf9..81c1f13 100644
+--- a/src/components/Dashboard/FamilyGroupSection.jsx
++++ b/src/components/Dashboard/FamilyGroupSection.jsx
+@@ -1,5 +1,6 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase } from '../../lib/supabase';
++import { calcularEdad } from '../../lib/fechas';
+ 
+ const FamilyGroupSection = ({ currentPerson }) => {
+   const [members, setMembers] = useState([]);
+@@ -18,16 +19,6 @@ const FamilyGroupSection = ({ currentPerson }) => {
+     setMembers(data || []);
+   };
+ 
+-  const calcularEdad = (fechaNac) => {
+-    if (!fechaNac) return null;
+-    const hoy = new Date();
+-    const nac = new Date(fechaNac);
+-    let edad = hoy.getFullYear() - nac.getFullYear();
+-    const m = hoy.getMonth() - nac.getMonth();
+-    if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+-    return edad >= 0 ? edad : null;
+-  };
+-
+   const getEdadDisplay = (m) => {
+     const porFecha = calcularEdad(m.fecha_nacimiento);
+     if (porFecha !== null) return `${porFecha} años`;
+diff --git a/src/components/Dashboard/NewCaseForm.jsx b/src/components/Dashboard/NewCaseForm.jsx
+index a0a750d..c8ed5be 100644
+--- a/src/components/Dashboard/NewCaseForm.jsx
++++ b/src/components/Dashboard/NewCaseForm.jsx
+@@ -1,5 +1,8 @@
+ import React, { useState, useEffect, useRef } from 'react';
+ import { supabase } from '../../lib/supabase';
++import { guardarPersona } from '../../lib/persons';
++import { hoyLocal, parseFechaLocal, calcularEdad } from '../../lib/fechas';
++import { escapeHtml, normalizarDni, dniConPuntos } from '../../lib/texto';
+ 
+ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId, setLastCaseId, onViewPerson }) => {
+   const dniRef = useRef(null);
+@@ -21,7 +24,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+   const [status, setStatus] = useState({ person: '', case: '' });
+   const [loading, setLoading] = useState(false);
+   const [socialAlerts, setSocialAlerts] = useState([]);
+-  const [actualDate, setActualDate] = useState(new Date().toISOString().split('T')[0]);
++  const [actualDate, setActualDate] = useState(hoyLocal());
+   const [showModal, setShowModal] = useState(false);
+   const [printSnapshot, setPrintSnapshot] = useState(null);
+ 
+@@ -48,7 +51,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+     }
+   }, [profile]);
+ 
+-  const normalizeDni = (v) => String(v || "").replace(/\D/g, "");
++  const normalizeDni = normalizarDni;
+ 
+   const resetForm = () => {
+     setFormData(prev => ({
+@@ -58,7 +61,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+       solucion: '',
+       areaId: profile?.role === 'superadmin' ? '' : (profile?.default_area_id ? String(profile.default_area_id) : '')
+     }));
+-    setActualDate(new Date().toISOString().split('T')[0]);
++    setActualDate(hoyLocal());
+     // No limpiamos a la persona ni sus datos personales, para que pueda cargar el Grupo Familiar.
+     setSocialAlerts([]);
+     
+@@ -83,7 +86,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+       solucion: '',
+       areaId: profile?.role === 'superadmin' ? '' : (profile?.default_area_id ? String(profile.default_area_id) : '')
+     });
+-    setActualDate(new Date().toISOString().split('T')[0]);
++    setActualDate(hoyLocal());
+     setCurrentPerson(null);
+     setLastCaseId(null);
+     setPrintSnapshot(null);
+@@ -108,20 +111,14 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+         const currentYear = now.getFullYear();
+ 
+         const filtered = data.filter(alerta => {
+-          if (!alerta.fecha) return false;
+-          const d = new Date(alerta.fecha);
+-          return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
++          const d = parseFechaLocal(alerta.fecha);
++          return d && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+         });
+ 
+         if (filtered.length > 0) {
+-          console.log("Alertas encontradas:", filtered);
+           setSocialAlerts(filtered);
+           setShowModal(true);
+-        } else {
+-          console.log("No se encontraron alertas para esta persona.");
+         }
+-      } else {
+-        console.log("No se encontraron alertas para esta persona.");
+       }
+     } catch (e) {
+       console.error("Error al buscar alertas sociales:", e);
+@@ -137,7 +134,8 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+     let { data: person } = await supabase.from('persons').select('*').eq('dni', dniNorm).maybeSingle();
+ 
+     if (!person) {
+-      const { data: lastCase } = await supabase.from('cases').select('*').ilike('dni', `%${dniNorm}%`).order('created_at', { ascending: false }).limit(1).maybeSingle();
++      // Búsqueda EXACTA: antes usaba ilike %dni% y el DNI 1234567 coincidía con 21234567.
++      const { data: lastCase } = await supabase.from('cases').select('*').in('dni', [dniNorm, dniConPuntos(dniNorm)]).order('created_at', { ascending: false }).limit(1).maybeSingle();
+       if (lastCase) {
+         const { data: newP } = await supabase.from('persons').insert({
+           dni: normalizeDni(lastCase.dni),
+@@ -164,7 +162,19 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+     const { id, value } = e.target;
+     setFormData(prev => ({ ...prev, [id]: value }));
+     if (id === 'dni' && currentPerson && normalizeDni(value) !== currentPerson.dni) {
++      // Cambió el DNI: se descartan los datos de la persona anterior para no guardarlos con otro DNI.
+       setCurrentPerson(null);
++      setFormData(prev => ({
++        ...prev,
++        dni: value,
++        apellidoNombre: '',
++        fechaNac: '',
++        telefono: '',
++        domicilio: '',
++        estadoCivil: '',
++        trabaja: '',
++      }));
++      setStatus({ person: '', case: '' });
+     }
+   };
+ 
+@@ -175,25 +185,18 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+ 
+     try {
+       const dniNorm = normalizeDni(formData.dni);
++      if (dniNorm.length < 7) throw new Error('El DNI debe tener al menos 7 dígitos.');
+       
+-      // 1) Upsert de Persona (onConflict: 'dni')
+-      const { data: person, error: pError } = await supabase
+-        .from('persons')
+-        .upsert({
+-          dni: dniNorm,
+-          apellido_nombre: formData.apellidoNombre,
+-          fecha_nacimiento: formData.fechaNac || null,
+-          domicilio: formData.domicilio || null,
+-          telefono: formData.telefono || null,
+-          estado_civil: formData.estadoCivil || null,
+-          trabaja_actualmente: formData.trabaja || null,
+-          updated_at: new Date().toISOString()
+-        }, { 
+-          onConflict: 'dni',
+-          ignoreDuplicates: false 
+-        })
+-        .select('id, apellido_nombre, dni')
+-        .single();
++      // 1) Guardar persona sin pisar datos existentes con campos vacíos
++      const { data: person, error: pError } = await guardarPersona({
++        dni: dniNorm,
++        apellido_nombre: formData.apellidoNombre,
++        fecha_nacimiento: formData.fechaNac,
++        domicilio: formData.domicilio,
++        telefono: formData.telefono,
++        estado_civil: formData.estadoCivil,
++        trabaja_actualmente: formData.trabaja,
++      });
+ 
+       if (pError) throw pError;
+ 
+@@ -278,13 +281,6 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+     }
+   };
+ 
+-  const escapeHtml = (value) => String(value ?? '-')
+-    .replace(/&/g, '&amp;')
+-    .replace(/</g, '&lt;')
+-    .replace(/>/g, '&gt;')
+-    .replace(/"/g, '&quot;')
+-    .replace(/'/g, '&#039;');
+-
+   const handlePrint = async () => {
+     const printableCaseId = lastCaseId || printSnapshot?.caseId;
+     const printablePerson = currentPerson || printSnapshot?.person;
+@@ -430,16 +426,6 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+     }, 500);
+   };
+ 
+-  const calcularEdad = (fechaNac) => {
+-    if (!fechaNac) return null;
+-    const hoy = new Date();
+-    const nac = new Date(fechaNac);
+-    let edad = hoy.getFullYear() - nac.getFullYear();
+-    const m = hoy.getMonth() - nac.getMonth();
+-    if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+-    return edad >= 0 ? edad : null;
+-  };
+-
+   if (!profile) {
+     return (
+       <section className="card flex items-center justify-center p-12">
+@@ -491,6 +477,8 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+                   placeholder="DNI sin puntos" 
+                   value={formData.dni} 
+                   onChange={handleInputChange}
++                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); findPerson(); } }}
++                  inputMode="numeric"
+                   required
+                 />
+                 <button 
+@@ -530,7 +518,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
+                 <div className="flex items-center gap-1.5 bg-accent/10 border border-accent/20 
+                                 rounded-xl px-3 py-2 shrink-0">
+                   <span className="text-lg font-black text-accent leading-none">
+-                    {calcularEdad(formData.fechaNac) !== null ? calcularEdad(formData.fechaNac) : '-'}
++                    {calcularEdad(formData.fechaNac) ?? '-'}
+                   </span>
+                   <span className="text-[10px] text-muted uppercase tracking-widest leading-tight">
+                     años
+diff --git a/src/components/Dashboard/PrestacionesSection.jsx b/src/components/Dashboard/PrestacionesSection.jsx
+index bdf302f..32dc2eb 100644
+--- a/src/components/Dashboard/PrestacionesSection.jsx
++++ b/src/components/Dashboard/PrestacionesSection.jsx
+@@ -1,6 +1,7 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+ import { supabase } from '../../lib/supabase';
+ import { Pencil, Trash2, X, Check, AlertCircle, Loader2, ChevronRight, MousePointerClick } from 'lucide-react';
++import { formatFecha } from '../../lib/fechas';
+ 
+ // Mapeo tabla por nombre de prestación
+ const TABLA_MAP = {
+@@ -40,7 +41,7 @@ const Toast = ({ msg, type }) => {
+   );
+ };
+ 
+-const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) => {
++const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion, prestacionesVersion = 0 }) => {
+   const [catalog, setCatalog] = useState([]);
+   const [history, setHistory] = useState([]);
+   const [loadingHistory, setLoadingHistory] = useState(false);
+@@ -83,6 +84,13 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
+     }
+   }, [activeCaseId]);
+ 
++  // Al cerrar el modal de prestaciones (guardar o editar) se recarga el historial.
++  // Antes no se recargaba y el operador creía que no se había guardado → duplicados.
++  useEffect(() => {
++    if (activeCaseId && prestacionesVersion > 0) loadHistory(activeCaseId);
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [prestacionesVersion]);
++
+   const loadCatalog = async (caseId) => {
+     const { data: caseData } = await supabase.from('cases').select('area_id').eq('id', caseId).single();
+     if (!caseData?.area_id) return;
+@@ -181,7 +189,7 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
+     }
+ 
+     // Llamar al handler del padre para abrir el modal en modo edición
+-    onEditPrestacion({ formType, data, recordId: h.id, tabla, nombre: h.nombre_prestacion });
++    onEditPrestacion({ formType, data, recordId: h.id, tabla, nombre: h.nombre_prestacion, caseId: activeCaseId });
+   };
+ 
+   // ── ELIMINAR ─────────────────────────────────────────────────────────────
+@@ -199,8 +207,6 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
+     loadHistory(activeCaseId);
+   };
+ 
+-  // Expone recarga al exterior (para que el modal al guardar actualice el historial)
+-  PrestacionesSection._reload = () => { if (activeCaseId) loadHistory(activeCaseId); };
+ 
+   return (
+     <section className="card space-y-6">
+@@ -256,7 +262,7 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
+                   <div className="flex-1 min-w-0">
+                     <p className="font-bold text-white text-sm group-hover:text-accent transition-colors">{c.apellido_nombre}</p>
+                     <p className="text-[10px] text-muted mt-0.5">
+-                      {c.area_name} · {c.motivo?.slice(0, 45)}{c.motivo?.length > 45 ? '...' : ''} · {new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR')}
++                      {c.area_name} · {c.motivo?.slice(0, 45)}{c.motivo?.length > 45 ? '...' : ''} · {formatFecha(c.actual_date || c.created_at)}
+                     </p>
+                   </div>
+                   <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-accent group-hover:translate-x-0.5 transition-all shrink-0" />
+diff --git a/src/components/DashboardFarmacia.jsx b/src/components/DashboardFarmacia.jsx
+index 926ba7d..a8caac3 100644
+--- a/src/components/DashboardFarmacia.jsx
++++ b/src/components/DashboardFarmacia.jsx
+@@ -1,5 +1,7 @@
+ import { useCallback, useEffect, useState, useRef } from 'react';
+ import { supabase } from '../lib/supabase';
++import { limpiarBusqueda } from '../lib/texto';
++import { hoyLocal } from '../lib/fechas';
+ 
+ // ─── Helpers ────────────────────────────────────────────────────────────────
+ 
+@@ -168,7 +170,7 @@ function MedicamentosModal({ paciente, onClose }) {
+         .from('farmacia_catalogo_con_precio')
+         .select('*')
+         .eq('activo', true)
+-        .or(`nombre.ilike.%${busqueda}%,droga.ilike.%${busqueda}%`)
++        .or(`nombre.ilike.%${limpiarBusqueda(busqueda)}%,droga.ilike.%${limpiarBusqueda(busqueda)}%`)
+         .order('nombre')
+         .limit(8);
+       setResultados(data || []);
+@@ -325,7 +327,7 @@ function EntregaModal({ paciente, mes, anio, onClose, onSaved }) {
+     setGuardando(true); setError('');
+     const { data: entrega, error: errEntrega } = await supabase
+       .from('farmacia_entregas')
+-      .upsert({ paciente_id: paciente.id, mes, anio, observaciones: observaciones || null, fecha_entrega: new Date().toISOString().split('T')[0] }, { onConflict: 'paciente_id,mes,anio' })
++      .upsert({ paciente_id: paciente.id, mes, anio, observaciones: observaciones || null, fecha_entrega: hoyLocal() }, { onConflict: 'paciente_id,mes,anio' })
+       .select('id').single();
+     if (errEntrega) { setError(errEntrega.message); setGuardando(false); return; }
+     await supabase.from('farmacia_entrega_items').delete().eq('entrega_id', entrega.id);
+@@ -418,7 +420,7 @@ function CatalogoItemModal({ item, onClose, onSaved }) {
+       const { error: ep } = await supabase.from('farmacia_precios').insert({
+         medicamento_id: medId,
+         precio: parseFloat(precio),
+-        vigente_desde: new Date().toISOString().split('T')[0],
++        vigente_desde: hoyLocal(),
+       });
+       if (ep) { setError('Medicamento guardado, pero error al guardar precio: ' + ep.message); setLoading(false); return; }
+     }
+diff --git a/src/components/MesaEntrada.jsx b/src/components/MesaEntrada.jsx
+index 5b745c1..95e2f09 100644
+--- a/src/components/MesaEntrada.jsx
++++ b/src/components/MesaEntrada.jsx
+@@ -1,14 +1,12 @@
+ import { useEffect, useState } from 'react';
+ import { supabase } from '../lib/supabase';
++import { guardarPersona } from '../lib/persons';
+ 
+ const sanitizeDni = (value) => String(value || '').replace(/\D/g, '');
+ 
+ const savePerson = async ({ dni, apellidoNombre }) => {
+-  const { data, error } = await supabase
+-    .from('persons')
+-    .upsert({ dni, apellido_nombre: apellidoNombre.trim(), updated_at: new Date().toISOString() }, { onConflict: 'dni' })
+-    .select('id')
+-    .single();
++  // No pisa datos existentes: si el DNI ya está cargado, solo completa lo que falte.
++  const { data, error } = await guardarPersona({ dni, apellido_nombre: apellidoNombre });
+   return { data, error };
+ };
+ 
+@@ -18,7 +16,6 @@ const saveAudiencia = async ({ personId, motivo, areaId }) => {
+     .insert([{ person_id: personId, motivo, estado: 'PENDIENTE', area_id: areaId }])
+     .select('id')
+     .maybeSingle();
+-  if (error) console.error('DETALLE DEL ERROR:', error.message);
+   return { data, error };
+ };
+ 
+diff --git a/src/components/PersonDetail/PersonDetail.jsx b/src/components/PersonDetail/PersonDetail.jsx
+index 504f57c..62072c8 100644
+--- a/src/components/PersonDetail/PersonDetail.jsx
++++ b/src/components/PersonDetail/PersonDetail.jsx
+@@ -1,5 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase } from '../../lib/supabase';
++import { calcularEdad, formatFecha, parseFechaLocal } from '../../lib/fechas';
++import { escapeHtml, normalizarDni } from '../../lib/texto';
+ 
+ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, backLabel }) => {
+   const [person, setPerson] = useState(null);
+@@ -26,12 +28,14 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+       setPerson(pData);
+ 
+       const { data: fData } = await supabase.from('family_members').select('*').eq('person_id', personId);
+-      const familyWithLinks = await Promise.all((fData || []).map(async (m) => {
+-        const dniNorm = String(m.dni || '').replace(/\D/g, '');
+-        if (!dniNorm) return m;
+-        const { data: linked } = await supabase.from('persons').select('id').eq('dni', dniNorm).maybeSingle();
+-        return { ...m, linkedPersonId: linked?.id };
+-      }));
++      // Vincular familiares que también son personas del sistema (una sola consulta, no una por familiar)
++      const dnisFamilia = [...new Set((fData || []).map(m => normalizarDni(m.dni)).filter(Boolean))];
++      let idPorDni = {};
++      if (dnisFamilia.length > 0) {
++        const { data: linked } = await supabase.from('persons').select('id, dni').in('dni', dnisFamilia);
++        idPorDni = Object.fromEntries((linked || []).map(p => [p.dni, p.id]));
++      }
++      const familyWithLinks = (fData || []).map(m => ({ ...m, linkedPersonId: idPorDni[normalizarDni(m.dni)] }));
+       setFamily(familyWithLinks);
+ 
+       const { data: cData } = await supabase
+@@ -42,8 +46,14 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+       setCases(cData || []);
+ 
+       // Obtener todas las prestaciones
+-      const { data: prestData } = await supabase.from('todas_las_prestaciones')
+-        .select('*').eq('case_id', cData?.[0]?.id || personId).order('created_at', { ascending: false });
++      // Prestaciones de TODOS los casos de la persona (antes solo traía las del último caso)
++      const caseIds = (cData || []).map(c => c.id);
++      let prestData = [];
++      if (caseIds.length > 0) {
++        const { data } = await supabase.from('todas_las_prestaciones')
++          .select('*').in('case_id', caseIds).order('created_at', { ascending: false });
++        prestData = data || [];
++      }
+ 
+       const { data: audData } = await supabase.from('audiencias')
+         .select('id, created_at, motivo, estado, prioridad, observaciones_area, area:areas!area_id(name)')
+@@ -55,8 +65,8 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+         ...(prestData || []).map(p => ({ ...p, type: 'prestacion' })),
+         ...(audData || []).map(a => ({ ...a, type: 'audiencia' }))
+       ].sort((a, b) => {
+-        const dateA = a.type === 'case' && a.actual_date ? new Date(a.actual_date) : new Date(a.created_at);
+-        const dateB = b.type === 'case' && b.actual_date ? new Date(b.actual_date) : new Date(b.created_at);
++        const dateA = a.type === 'case' && a.actual_date ? parseFechaLocal(a.actual_date) : new Date(a.created_at);
++        const dateB = b.type === 'case' && b.actual_date ? parseFechaLocal(b.actual_date) : new Date(b.created_at);
+         return dateB - dateA;
+       });
+       setTimeline(combinedTimeline);
+@@ -69,24 +79,20 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+     }
+   };
+ 
+-  const calcularEdad = (fechaNac) => {
+-    if (!fechaNac) return null;
+-    const hoy = new Date(); const nac = new Date(fechaNac);
+-    let edad = hoy.getFullYear() - nac.getFullYear();
+-    const m = hoy.getMonth() - nac.getMonth();
+-    if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+-    return edad >= 0 ? edad : null;
+-  };
+-
+   const handlePrint = () => {
+     const edad = calcularEdad(person.fecha_nacimiento);
+     const win = window.open('', '_blank');
+-
++    if (!win) {
++      alert('El navegador bloqueó la ventana de impresión. Habilite las ventanas emergentes para este sitio.');
++      return;
++    }
++    // Todo dato cargado por usuarios se escapa: un nombre con HTML/JS no debe ejecutarse en la impresión
++    const e = escapeHtml;
+     const html = `<!DOCTYPE html>
+ <html lang="es">
+ <head>
+   <meta charset="UTF-8"/>
+-  <title>Ficha — ${person.apellido_nombre}</title>
++  <title>Ficha — ${e(person.apellido_nombre)}</title>
+   <style>
+     * { box-sizing: border-box; margin: 0; padding: 0; }
+     body { font-family: Arial, sans-serif; color: #111; background: #fff; padding: 24px; font-size: 13px; }
+@@ -110,8 +116,8 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+       <p>Provincia de Misiones — Ficha Social</p>
+     </div>
+     <div class="header-right">
+-      <p><strong>${person.apellido_nombre}</strong></p>
+-      <p>DNI: ${person.dni || '-'}</p>
++      <p><strong>${e(person.apellido_nombre)}</strong></p>
++      <p>DNI: ${e(person.dni)}</p>
+       <p>${new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+     </div>
+   </div>
+@@ -119,23 +125,23 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+   <h2>Datos Personales</h2>
+   <table>
+     <tbody>
+-      <tr><th>DNI</th><td>${person.dni || '-'}</td></tr>
+-      <tr><th>Apellido y Nombre</th><td>${person.apellido_nombre || '-'}</td></tr>
++      <tr><th>DNI</th><td>${e(person.dni)}</td></tr>
++      <tr><th>Apellido y Nombre</th><td>${e(person.apellido_nombre)}</td></tr>
+       <tr><th>Fecha de Nacimiento</th><td>
+-        ${person.fecha_nacimiento ? new Date(person.fecha_nacimiento).toLocaleDateString('es-AR') : '-'}
++        ${formatFecha(person.fecha_nacimiento, '-')}
+         ${edad !== null ? `<span class="edad-badge">${edad} años</span>` : ''}
+       </td></tr>
+-      <tr><th>Domicilio</th><td>${person.domicilio || '-'}</td></tr>
+-      <tr><th>Teléfono</th><td>${person.telefono || '-'}</td></tr>
+-      <tr><th>Estado Civil</th><td>${person.estado_civil || '-'}</td></tr>
+-      <tr><th>Trabaja Actualmente</th><td>${person.trabaja_actualmente || '-'}</td></tr>
++      <tr><th>Domicilio</th><td>${e(person.domicilio)}</td></tr>
++      <tr><th>Teléfono</th><td>${e(person.telefono)}</td></tr>
++      <tr><th>Estado Civil</th><td>${e(person.estado_civil)}</td></tr>
++      <tr><th>Trabaja Actualmente</th><td>${e(person.trabaja_actualmente)}</td></tr>
+     </tbody>
+   </table>
+ 
+   <h2>Grupo Familiar (${family.length})</h2>
+   ${family.length > 0 ? `<table>
+     <thead><tr><th>Nombre</th><th>DNI</th><th>Vínculo</th><th>Observaciones</th></tr></thead>
+-    <tbody>${family.map(m => `<tr><td>${m.apellido_nombres || '-'}</td><td>${m.dni || '-'}</td><td>${m.vinculo || '-'}</td><td>${m.observaciones || '-'}</td></tr>`).join('')}</tbody>
++    <tbody>${family.map(m => `<tr><td>${e(m.apellido_nombres)}</td><td>${e(m.dni)}</td><td>${e(m.vinculo)}</td><td>${e(m.observaciones)}</td></tr>`).join('')}</tbody>
+   </table>` : '<p style="color:#888;font-size:12px;">Sin integrantes registrados.</p>'}
+ 
+   <h2>Historial de Atenciones (${timeline.length})</h2>
+@@ -143,13 +149,13 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+     <thead><tr><th>Tipo</th><th>Descripción</th><th>Detalles / Resumen</th><th>Estado/Área</th><th>Fecha</th></tr></thead>
+     <tbody>${timeline.map(item => {
+       const typeLabel = item.type === 'case' ? 'Caso Iniciado' : item.type === 'audiencia' ? 'Audiencia' : 'Prestación';
+-      const dateStr = item.type === 'case' && item.actual_date ? new Date(item.actual_date).toLocaleDateString('es-AR') : new Date(item.created_at).toLocaleDateString('es-AR');
++      const dateStr = item.type === 'case' && item.actual_date ? formatFecha(item.actual_date) : new Date(item.created_at).toLocaleDateString('es-AR');
+       const stateInfo = item.type === 'audiencia' ? item.estado : (item.area?.name || item.area_name || '—');
+       const desc = item.type === 'case' ? item.motivo : item.type === 'audiencia' ? (item.motivo || '—') : item.nombre_prestacion;
+       const detalles = item.type === 'case' 
+         ? `Motivo: ${item.motivo || '—'} | Solución: ${item.solucion || '—'}` 
+         : item.type === 'audiencia' ? (item.observaciones_area || '—') : (item.resumen || '—');
+-      return `<tr><td style="font-weight:bold;">${typeLabel}</td><td>${desc}</td><td style="font-size:11px;">${detalles}</td><td>${stateInfo}</td><td>${dateStr}</td></tr>`;
++      return `<tr><td style="font-weight:bold;">${typeLabel}</td><td>${e(desc)}</td><td style="font-size:11px;">${e(detalles)}</td><td>${e(stateInfo)}</td><td>${dateStr}</td></tr>`;
+     }).join('')}</tbody>
+   </table>` : '<p style="color:#888;font-size:12px;">Sin eventos registrados.</p>'}
+ 
+@@ -200,9 +206,7 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+               {[
+                 ['DNI', person.dni],
+                 ['Apellido y Nombre', person.apellido_nombre],
+-                ['Fecha nacimiento', person.fecha_nacimiento
+-                  ? `${new Date(person.fecha_nacimiento).toLocaleDateString('es-AR')}`
+-                  : '—'],
++                ['Fecha nacimiento', formatFecha(person.fecha_nacimiento)],
+                 ['Edad', calcularEdad(person.fecha_nacimiento) !== null ? `${calcularEdad(person.fecha_nacimiento)} años` : '—'],
+                 ['Domicilio', person.domicilio || '—'],
+                 ['Teléfono', person.telefono || '—'],
+@@ -269,7 +273,7 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+                 {timeline.map((item, i) => {
+                   const typeLabel = item.type === 'case' ? '📋 Caso' : item.type === 'audiencia' ? '🎤 Audiencia' : '✓ Prestación';
+                   const dateStr = item.type === 'case' && item.actual_date 
+-                    ? new Date(item.actual_date).toLocaleDateString('es-AR')
++                    ? formatFecha(item.actual_date)
+                     : new Date(item.created_at).toLocaleDateString('es-AR');
+                   const stateInfo = item.type === 'audiencia' ? item.estado : (item.area?.name || item.area_name || '—');
+                   
+diff --git a/src/components/Prestaciones/forms/EconomicoForm.jsx b/src/components/Prestaciones/forms/EconomicoForm.jsx
+index 4d05c49..5039380 100644
+--- a/src/components/Prestaciones/forms/EconomicoForm.jsx
++++ b/src/components/Prestaciones/forms/EconomicoForm.jsx
+@@ -1,6 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase } from '../../../lib/supabase';
+ import { ArrowLeft, Save, DollarSign } from 'lucide-react';
++import { hoyLocal } from '../../../lib/fechas';
+ 
+ const EconomicoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
+   const isEdit = isEditing && !!recordId;
+@@ -8,7 +9,7 @@ const EconomicoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditi
+   const [formData, setFormData] = useState({
+     monto: 0,
+     concepto: '',
+-    fecha_entrega: new Date().toISOString().split('T')[0],
++    fecha_entrega: hoyLocal(),
+     observaciones: ''
+   });
+ 
+@@ -17,7 +18,7 @@ const EconomicoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditi
+       setFormData({
+         monto: initialData.monto ?? 0,
+         concepto: initialData.concepto || '',
+-        fecha_entrega: initialData.fecha_entrega || new Date().toISOString().split('T')[0],
++        fecha_entrega: initialData.fecha_entrega || hoyLocal(),
+         observaciones: initialData.observaciones || ''
+       });
+     }
+diff --git a/src/components/Prestaciones/forms/FunebreForm.jsx b/src/components/Prestaciones/forms/FunebreForm.jsx
+index 9d33b7c..6984d66 100644
+--- a/src/components/Prestaciones/forms/FunebreForm.jsx
++++ b/src/components/Prestaciones/forms/FunebreForm.jsx
+@@ -1,11 +1,12 @@
+ import React, { useState } from 'react';
+ import { supabase } from '../../../lib/supabase';
+ import { ArrowLeft, Save, Heart } from 'lucide-react';
++import { hoyLocal } from '../../../lib/fechas';
+ 
+ const FunebreForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
+   const [loading, setLoading] = useState(false);
+   const [formData, setFormData] = useState({
+-    fecha_fallecimiento: initialData?.fecha_fallecimiento ?? new Date().toISOString().split('T')[0],
++    fecha_fallecimiento: initialData?.fecha_fallecimiento ?? hoyLocal(),
+     nombre_fallecido: initialData?.nombre_fallecido ?? '',
+     apellido_fallecido: initialData?.apellido_fallecido ?? '',
+     recibio_modulo: initialData?.recibio_modulo ?? false,
+diff --git a/src/components/Prestaciones/forms/ModulosForm.jsx b/src/components/Prestaciones/forms/ModulosForm.jsx
+index 65bd269..ad7d398 100644
+--- a/src/components/Prestaciones/forms/ModulosForm.jsx
++++ b/src/components/Prestaciones/forms/ModulosForm.jsx
+@@ -1,12 +1,13 @@
+ import React, { useState } from 'react';
+ import { supabase } from '../../../lib/supabase';
+ import { ArrowLeft, Save } from 'lucide-react';
++import { hoyLocal } from '../../../lib/fechas';
+ 
+ const ModulosForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
+   const [loading, setLoading] = useState(false);
+   const [formData, setFormData] = useState({
+     cantidad: initialData?.cantidad ?? 1,
+-    fecha_entrega: initialData?.fecha_entrega ?? new Date().toISOString().split('T')[0],
++    fecha_entrega: initialData?.fecha_entrega ?? hoyLocal(),
+   });
+ 
+   const handleSubmit = async (e) => {
+diff --git a/src/components/Prestaciones/forms/PasajesForm.jsx b/src/components/Prestaciones/forms/PasajesForm.jsx
+index b472c04..98f3c89 100644
+--- a/src/components/Prestaciones/forms/PasajesForm.jsx
++++ b/src/components/Prestaciones/forms/PasajesForm.jsx
+@@ -1,6 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase } from '../../../lib/supabase';
+ import { ArrowLeft, Save, Ticket, Plus, Trash2 } from 'lucide-react';
++import { hoyLocal } from '../../../lib/fechas';
+ 
+ const PasajesForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
+   const isEdit = isEditing && !!recordId;
+@@ -9,7 +10,7 @@ const PasajesForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing
+     cantidad_acompanantes: 0,
+     tipo_viaje: 'ida_vuelta',
+     destino: '',
+-    fecha_turno: new Date().toISOString().split('T')[0],
++    fecha_turno: hoyLocal(),
+     motivo_viaje: '',
+     precio_unitario: 0,
+   });
+@@ -22,7 +23,7 @@ const PasajesForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing
+         cantidad_acompanantes: initialData.cantidad_acompanantes ?? 0,
+         tipo_viaje: initialData.tipo_viaje || 'ida_vuelta',
+         destino: initialData.destino || '',
+-        fecha_turno: initialData.fecha_turno || new Date().toISOString().split('T')[0],
++        fecha_turno: initialData.fecha_turno || hoyLocal(),
+         motivo_viaje: initialData.motivo_viaje || '',
+         precio_unitario: initialData.precio_unitario ?? 0,
+       });
+diff --git a/src/components/Prestaciones/forms/TechoForm.jsx b/src/components/Prestaciones/forms/TechoForm.jsx
+index 3ffbb31..378cd8d 100644
+--- a/src/components/Prestaciones/forms/TechoForm.jsx
++++ b/src/components/Prestaciones/forms/TechoForm.jsx
+@@ -1,13 +1,14 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase } from '../../../lib/supabase';
+ import { ArrowLeft, Save, Home, Plus, Trash2 } from 'lucide-react';
++import { hoyLocal } from '../../../lib/fechas';
+ 
+ const UNIDADES = ['unidades', 'kg', 'metros', 'litros', 'bolsas', 'chapas', 'pares', 'rollos', 'cajas', 'otro'];
+ 
+ const TechoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
+   const [loading, setLoading] = useState(false);
+   const [fecha_entrega, setFechaEntrega] = useState(
+-    initialData?.fecha_entrega ?? new Date().toISOString().split('T')[0]
++    initialData?.fecha_entrega ?? hoyLocal()
+   );
+   const [observaciones, setObservaciones] = useState(initialData?.observaciones ?? '');
+   const [items, setItems] = useState(() => {
+@@ -20,7 +21,7 @@ const TechoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }
+   // Si initialData cambia (poco probable pero seguro)
+   useEffect(() => {
+     if (initialData) {
+-      setFechaEntrega(initialData.fecha_entrega ?? new Date().toISOString().split('T')[0]);
++      setFechaEntrega(initialData.fecha_entrega ?? hoyLocal());
+       setObservaciones(initialData.observaciones ?? '');
+       if (initialData.items && Array.isArray(initialData.items) && initialData.items.length > 0) {
+         setItems(initialData.items.map((i, idx) => ({ id: idx + 1, nombre: i.nombre, cantidad: i.cantidad, unidad: i.unidad })));
+diff --git a/src/components/Prestaciones/forms/ViajesForm.jsx b/src/components/Prestaciones/forms/ViajesForm.jsx
+index 96abc6e..ca79e54 100644
+--- a/src/components/Prestaciones/forms/ViajesForm.jsx
++++ b/src/components/Prestaciones/forms/ViajesForm.jsx
+@@ -1,12 +1,13 @@
+ import React, { useState } from 'react';
+ import { supabase } from '../../../lib/supabase';
+ import { ArrowLeft, Save, Truck } from 'lucide-react';
++import { hoyLocal } from '../../../lib/fechas';
+ 
+ const ViajesForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
+   const [loading, setLoading] = useState(false);
+   const [formData, setFormData] = useState({
+     destino: initialData?.destino ?? '',
+-    fecha: initialData?.fecha ?? new Date().toISOString().split('T')[0],
++    fecha: initialData?.fecha ?? hoyLocal(),
+     hora_salida_wanda: initialData?.hora_salida_wanda ?? '',
+     hora_llegada_destino: initialData?.hora_llegada_destino ?? '',
+     hora_salida_destino: initialData?.hora_salida_destino ?? '',
+diff --git a/src/components/Search/GlobalSearch.jsx b/src/components/Search/GlobalSearch.jsx
+index f98359c..e80e838 100644
+--- a/src/components/Search/GlobalSearch.jsx
++++ b/src/components/Search/GlobalSearch.jsx
+@@ -1,5 +1,7 @@
+ import React, { useState } from 'react';
+ import { supabase } from '../../lib/supabase';
++import { limpiarBusqueda, dniConPuntos } from '../../lib/texto';
++import { formatFecha } from '../../lib/fechas';
+ 
+ const GlobalSearch = ({ onViewPerson }) => {
+   const [query, setQuery] = useState('');
+@@ -15,7 +17,10 @@ const GlobalSearch = ({ onViewPerson }) => {
+     setStatus('Buscando...');
+ 
+     try {
+-      const term = query.trim();
++      // Se quitan puntos de DNIs ("12.345.678") y caracteres que rompen los filtros de Supabase
++      const crudo = query.trim();
++      const term = /^[\d.\s]+$/.test(crudo) ? crudo.replace(/\D/g, '') : limpiarBusqueda(crudo);
++      if (!term) { setStatus('Ingresá un término válido.'); return; }
+       const isOnlyNumbers = /^\d+$/.test(term);
+       const hasLetters = /[a-zA-Zà-ÿ]/.test(term);
+ 
+@@ -26,7 +31,7 @@ const GlobalSearch = ({ onViewPerson }) => {
+         const { data } = await supabase
+           .from('persons')
+           .select('*')
+-          .eq('dni', term)
++          .in('dni', [term, dniConPuntos(term)])
+           .limit(10);
+         persons = data || [];
+       } else if (hasLetters && !isOnlyNumbers) {
+@@ -122,6 +127,39 @@ const GlobalSearch = ({ onViewPerson }) => {
+           </div>
+         )}
+ 
++        {/* Familiares: antes se buscaban pero nunca se mostraban */}
++        {results.family.length > 0 && (
++          <div className="mt-8 space-y-4">
++            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
++              <div className="w-2 h-2 rounded-full bg-accent"></div>
++              <h3 className="text-sm font-black text-white uppercase tracking-tight">Registrados como familiares</h3>
++            </div>
++            <div className="tableWrap overflow-x-auto shadow-xl">
++              <table className="w-full min-w-[600px]">
++                <thead><tr><th className="py-4">DNI</th><th>Nombre</th><th>Vínculo</th><th>Acción</th></tr></thead>
++                <tbody>
++                  {results.family.map(m => (
++                    <tr key={m.id} className="hover:bg-white/5 transition-colors">
++                      <td className="font-mono text-xs py-4">{m.dni || '—'}</td>
++                      <td className="text-xs font-bold text-white uppercase">{m.apellido_nombres}</td>
++                      <td className="text-xs text-white/60">{m.vinculo || '—'}</td>
++                      <td>
++                        <button
++                          className="secondary py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-[36px]"
++                          onClick={() => onViewPerson(m.person_id)}
++                          disabled={!m.person_id}
++                        >
++                          Ver titular
++                        </button>
++                      </td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            </div>
++          </div>
++        )}
++
+         {results.cases.length > 0 && (
+           <div className="mt-8 space-y-4">
+             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+@@ -134,7 +172,7 @@ const GlobalSearch = ({ onViewPerson }) => {
+                 <tbody>
+                   {results.cases.map(c => (
+                     <tr key={c.id} className="hover:bg-white/5 transition-colors">
+-                      <td className="text-[10px] font-mono py-4 opacity-60">{new Date(c.actual_date || c.created_at).toLocaleDateString()}</td>
++                      <td className="text-[10px] font-mono py-4 opacity-60">{c.actual_date ? formatFecha(c.actual_date) : new Date(c.created_at).toLocaleDateString('es-AR')}</td>
+                       <td><span className="pill text-[9px]">{c.area_name}</span></td>
+                       <td className="text-xs font-bold text-white uppercase">{c.apellido_nombre}</td>
+                       <td><button className="secondary py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-[36px]" onClick={() => onViewPerson(c.person_id)}>Ver persona</button></td>
+diff --git a/src/components/Stats/StatsDashboard.jsx b/src/components/Stats/StatsDashboard.jsx
+index aed4b56..3502427 100644
+--- a/src/components/Stats/StatsDashboard.jsx
++++ b/src/components/Stats/StatsDashboard.jsx
+@@ -1,5 +1,6 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+ import { supabase } from '../../lib/supabase';
++import { formatFecha } from '../../lib/fechas';
+ 
+ // ─── Helpers ─────────────────────────────────────────────────────────────────
+ 
+@@ -757,7 +758,7 @@ async function exportarPDFDetalle(detalle, filters, filtroTexto) {
+   const colConfig = {
+     'Pasajes de Ómnibus': {
+       head: ['N°', 'Apellido y Nombre', 'DNI', 'Destino', 'Fecha Turno', 'Tipo Viaje', 'Acomp.', 'Motivo'],
+-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha_turno ? new Date(r.fecha_turno).toLocaleDateString('es-AR') : '—', tipoViajeLbl[r.tipo_viaje]||r.tipo_viaje||'—', r.cantidad_acompanantes??0, r.motivo_viaje||'—'],
++      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha_turno ? formatFecha(r.fecha_turno) : '—', tipoViajeLbl[r.tipo_viaje]||r.tipo_viaje||'—', r.cantidad_acompanantes??0, r.motivo_viaje||'—'],
+     },
+     'Carga de Combustible': {
+       head: ['N°', 'Apellido y Nombre', 'DNI', 'Litros', 'Tipo', 'Patente', 'Destino', 'Motivo'],
+@@ -769,19 +770,19 @@ async function exportarPDFDetalle(detalle, filters, filtroTexto) {
+     },
+     'Módulos Alimenticios': {
+       head: ['N°', 'Apellido y Nombre', 'DNI', 'Área', 'Cantidad', 'Fecha Entrega'],
+-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.cantidad||0, r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'],
++      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.cantidad||0, r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'],
+     },
+     'Viaje Móvil Social': {
+       head: ['N°', 'Apellido y Nombre', 'DNI', 'Destino', 'Fecha', 'Salida Wanda', 'Llegada Dest.', 'Salida Dest.', 'Llegada Wanda'],
+-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha ? new Date(r.fecha).toLocaleDateString('es-AR') : '—', r.hora_salida_wanda||'—', r.hora_llegada_destino||'—', r.hora_salida_destino||'—', r.hora_llegada_wanda||'—'],
++      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha ? formatFecha(r.fecha) : '—', r.hora_salida_wanda||'—', r.hora_llegada_destino||'—', r.hora_salida_destino||'—', r.hora_llegada_wanda||'—'],
+     },
+     'Servicio Fúnebre': {
+       head: ['N°', 'Apellido y Nombre', 'DNI', 'Fallecido', 'Fecha Fallec.', 'Recibió Módulo'],
+-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', `${r.nombre_fallecido||''} ${r.apellido_fallecido||''}`.trim()||'—', r.fecha_fallecimiento ? new Date(r.fecha_fallecimiento).toLocaleDateString('es-AR') : '—', r.recibio_modulo ? 'Sí' : 'No'],
++      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', `${r.nombre_fallecido||''} ${r.apellido_fallecido||''}`.trim()||'—', r.fecha_fallecimiento ? formatFecha(r.fecha_fallecimiento) : '—', r.recibio_modulo ? 'Sí' : 'No'],
+     },
+     'Construyendo Techo': {
+       head: ['N°', 'Apellido y Nombre', 'DNI', 'Área', 'Materiales', 'Fecha'],
+-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.items || r.resumen || '—', r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'],
++      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.items || r.resumen || '—', r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'],
+     },
+   };
+ 
+@@ -1364,7 +1365,7 @@ const StatsDashboard = ({ areas }) => {
+                       <td className="px-4 py-3"><span className="pill text-[9px]">{r.caso?.areas?.name || '—'}</span></td>
+                       {esPasajes && <>
+                         <td className="px-4 py-3 text-white/80">{r.destino || '—'}</td>
+-                        <td className="px-4 py-3 font-mono text-accent">{r.fecha_turno ? new Date(r.fecha_turno).toLocaleDateString('es-AR') : '—'}</td>
++                        <td className="px-4 py-3 font-mono text-accent">{r.fecha_turno ? formatFecha(r.fecha_turno) : '—'}</td>
+                         <td className="px-4 py-3 text-white/70">{tipoViajeLbl[r.tipo_viaje] || r.tipo_viaje || '—'}</td>
+                         <td className="px-4 py-3 text-center text-white/70">{r.cantidad_acompanantes ?? 0}</td>
+                         <td className="px-4 py-3 text-white/60 max-w-[200px] truncate" title={r.motivo_viaje}>{r.motivo_viaje || '—'}</td>
+@@ -1381,22 +1382,22 @@ const StatsDashboard = ({ areas }) => {
+                       </>}
+                       {esModulos && <>
+                         <td className="px-4 py-3 text-accent font-bold text-center">{r.cantidad}</td>
+-                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'}</td>
++                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'}</td>
+                       </>}
+                       {esViajes && <>
+                         <td className="px-4 py-3 text-white/80">{r.destino || '—'}</td>
+-                        <td className="px-4 py-3 font-mono text-accent">{r.fecha ? new Date(r.fecha).toLocaleDateString('es-AR') : '—'}</td>
++                        <td className="px-4 py-3 font-mono text-accent">{r.fecha ? formatFecha(r.fecha) : '—'}</td>
+                         <td className="px-4 py-3 font-mono text-white/60">{r.hora_salida_wanda || '—'}</td>
+                         <td className="px-4 py-3 font-mono text-white/60">{r.hora_llegada_wanda || '—'}</td>
+                       </>}
+                       {esFunebre && <>
+                         <td className="px-4 py-3 text-white/80">{r.nombre_fallecido} {r.apellido_fallecido}</td>
+-                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_fallecimiento ? new Date(r.fecha_fallecimiento).toLocaleDateString('es-AR') : '—'}</td>
++                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_fallecimiento ? formatFecha(r.fecha_fallecimiento) : '—'}</td>
+                         <td className="px-4 py-3 text-center">{r.recibio_modulo ? '✓' : '—'}</td>
+                       </>}
+                       {esTecho && <>
+                         <td className="px-4 py-3 text-white/80 max-w-[300px]" title={r.items || r.resumen}>{r.items || r.resumen || '—'}</td>
+-                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'}</td>
++                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'}</td>
+                       </>}
+                       <td className="px-4 py-3 font-mono text-white/30 text-[10px]">{new Date(r.created_at).toLocaleDateString('es-AR')}</td>
+                     </tr>
+diff --git a/src/lib/fechas.js b/src/lib/fechas.js
+new file mode 100644
+index 0000000..0daaf62
+--- /dev/null
++++ b/src/lib/fechas.js
+@@ -0,0 +1,39 @@
++// Utilidades de fecha que respetan la hora local (Argentina, UTC-3).
++// Evitan dos errores clásicos:
++//  - new Date().toISOString() usa UTC: después de las 21 h devuelve el día siguiente.
++//  - new Date('1990-05-10') se interpreta como UTC: en Argentina se muestra 09/05/1990.
++
++const pad = (n) => String(n).padStart(2, '0');
++
++/** Fecha de hoy en formato 'YYYY-MM-DD' según la hora local. */
++export const hoyLocal = () => {
++  const d = new Date();
++  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
++};
++
++/** Convierte 'YYYY-MM-DD' (o un timestamp) en Date local, sin corrimiento de zona horaria. */
++export const parseFechaLocal = (valor) => {
++  if (!valor) return null;
++  if (valor instanceof Date) return valor;
++  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(valor));
++  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
++  const d = new Date(valor);
++  return Number.isNaN(d.getTime()) ? null : d;
++};
++
++/** Formatea una fecha (solo día) como dd/mm/aaaa. Devuelve `vacio` si no hay valor. */
++export const formatFecha = (valor, vacio = '—') => {
++  const d = parseFechaLocal(valor);
++  return d ? d.toLocaleDateString('es-AR') : vacio;
++};
++
++/** Edad en años cumplidos a partir de una fecha de nacimiento. */
++export const calcularEdad = (fechaNac) => {
++  const nac = parseFechaLocal(fechaNac);
++  if (!nac) return null;
++  const hoy = new Date();
++  let edad = hoy.getFullYear() - nac.getFullYear();
++  const m = hoy.getMonth() - nac.getMonth();
++  if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
++  return edad >= 0 ? edad : null;
++};
+diff --git a/src/lib/persons.js b/src/lib/persons.js
+new file mode 100644
+index 0000000..c567a75
+--- /dev/null
++++ b/src/lib/persons.js
+@@ -0,0 +1,49 @@
++import { supabase } from './supabase';
++import { normalizarDni } from './texto';
++
++/**
++ * Guarda una persona sin pisar datos existentes.
++ *
++ * - Si el DNI no existe: la crea con los campos recibidos.
++ * - Si el DNI ya existe: actualiza SOLO los campos que vienen con valor.
++ *   Un campo vacío en el formulario nunca borra un dato ya cargado.
++ *
++ * @param {object} campos  { dni, apellido_nombre, fecha_nacimiento, domicilio, telefono, estado_civil, trabaja_actualmente }
++ * @returns {{ data: object|null, error: object|null, creada: boolean }}
++ */
++export async function guardarPersona(campos) {
++  const dni = normalizarDni(campos.dni);
++  if (!dni) return { data: null, error: new Error('El DNI es obligatorio.'), creada: false };
++
++  const conValor = {};
++  for (const [k, v] of Object.entries(campos)) {
++    if (k === 'dni') continue;
++    if (v === null || v === undefined) continue;
++    if (typeof v === 'string' && v.trim() === '') continue;
++    conValor[k] = typeof v === 'string' ? v.trim() : v;
++  }
++
++  const { data: existente, error: errBusqueda } = await supabase
++    .from('persons')
++    .select('id')
++    .eq('dni', dni)
++    .maybeSingle();
++  if (errBusqueda) return { data: null, error: errBusqueda, creada: false };
++
++  if (existente) {
++    const { data, error } = await supabase
++      .from('persons')
++      .update({ ...conValor, updated_at: new Date().toISOString() })
++      .eq('id', existente.id)
++      .select('*')
++      .single();
++    return { data, error, creada: false };
++  }
++
++  const { data, error } = await supabase
++    .from('persons')
++    .insert({ dni, ...conValor })
++    .select('*')
++    .single();
++  return { data, error, creada: true };
++}
+diff --git a/src/lib/texto.js b/src/lib/texto.js
+new file mode 100644
+index 0000000..91edd21
+--- /dev/null
++++ b/src/lib/texto.js
+@@ -0,0 +1,26 @@
++/** Escapa texto para insertarlo en HTML generado a mano (impresiones). */
++export const escapeHtml = (value, vacio = '-') => {
++  if (value === null || value === undefined || value === '') return vacio;
++  return String(value)
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;')
++    .replace(/"/g, '&quot;')
++    .replace(/'/g, '&#039;');
++};
++
++/**
++ * Limpia un término de búsqueda para usarlo dentro de filtros .or() / .ilike() de Supabase.
++ * Comas, paréntesis y comodines rompen la sintaxis del filtro o cambian su significado.
++ */
++export const limpiarBusqueda = (valor) =>
++  String(valor || '')
++    .replace(/[,()%*\\]/g, ' ')
++    .replace(/\s+/g, ' ')
++    .trim();
++
++/** Deja solo los dígitos de un DNI. */
++export const normalizarDni = (valor) => String(valor || '').replace(/\D/g, '');
++
++/** DNI con puntos (12.345.678), para encontrar registros viejos cargados con formato. */
++export const dniConPuntos = (dni) => normalizarDni(dni).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+diff --git a/src/lib/useNotifications.js b/src/lib/useNotifications.js
+index 046efdb..16d5730 100644
+--- a/src/lib/useNotifications.js
++++ b/src/lib/useNotifications.js
+@@ -1,9 +1,12 @@
+-import { useState, useEffect, useCallback, useRef } from 'react';
++import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+ import { supabase } from './supabase';
+ 
+ export function useNotifications(profile) {
+-  const [unreadCount, setUnreadCount] = useState(0);
++  // Cada notificación lleva su propio estado de lectura; el contador se calcula a partir de la lista.
++  // Antes el contador era un número aparte que bajaba con CUALQUIER cambio en audiencias,
++  // aunque fuera de otra área, y podía quedar en 0 con derivaciones sin leer.
+   const [notifications, setNotifications] = useState([]);
++  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
+   const knownIds = useRef(new Set());
+ 
+   const isSuperAdmin = profile?.role === 'superadmin';
+@@ -33,10 +36,10 @@ export function useNotifications(profile) {
+       motivo:        row.motivo               || 'Sin motivo',
+       prioridad:     row.prioridad            || 'normal',
+       timestamp:     new Date(),
++      read:          false,
+     };
+ 
+-    setNotifications(prev => [notif, ...prev].slice(0, 20));
+-    setUnreadCount(prev => prev + 1);
++    setNotifications(prev => [notif, ...prev.filter(n => n.id !== notif.id)].slice(0, 20));
+   }, []);
+ 
+   useEffect(() => {
+@@ -83,27 +86,26 @@ export function useNotifications(profile) {
+         { event: 'UPDATE', schema: 'public', table: 'audiencias' },
+         async (payload) => {
+           const row = payload.new;
+-          const old = payload.old;
+ 
+-          const fueDerivada    = row.estado === 'DERIVADO' && old.estado !== 'DERIVADO';
++          // No dependemos de payload.old: sin REPLICA IDENTITY FULL viene vacío, y con él
++          // una re-derivación entre áreas (DERIVADO → DERIVADO) no se notificaba.
++          const estaDerivada   = row.estado === 'DERIVADO';
+           const esParaNosotros = isSuperAdmin || row.area_id === areaId;
+ 
+-          if (fueDerivada && esParaNosotros && !knownIds.current.has(row.id)) {
++          if (estaDerivada && esParaNosotros && !knownIds.current.has(row.id)) {
+             knownIds.current.add(row.id);
+             await agregarNotificacion(row);
+           }
+ 
+-          // Si ya no está DERIVADO, sacarla de la lista
+-          if (row.estado !== 'DERIVADO') {
++          // Si ya no está DERIVADO (o se derivó a otra área), sacarla de la lista.
++          // Solo afecta a notificaciones que estaban en la lista; el contador se recalcula solo.
++          if (row.estado !== 'DERIVADO' || (!isSuperAdmin && row.area_id !== areaId)) {
+             setNotifications(prev => prev.filter(n => n.id !== row.id));
+-            setUnreadCount(prev => Math.max(0, prev - 1));
++            knownIds.current.delete(row.id);
+           }
+         }
+       )
+       .subscribe((status) => {
+-        if (status === 'SUBSCRIBED') {
+-          console.log('[Notif] Canal suscrito:', channelName);
+-        }
+         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+           console.warn('[Notif] Error en canal:', channelName, status);
+         }
+@@ -115,12 +117,13 @@ export function useNotifications(profile) {
+   // Re-ejecutar si cambia el perfil o el área (ej: admin cambia de área)
+   }, [profile, isSuperAdmin, areaId, agregarNotificacion]);
+ 
+-  const markAllRead = useCallback(() => setUnreadCount(0), []);
++  const markAllRead = useCallback(() => {
++    setNotifications(prev => prev.some(n => !n.read) ? prev.map(n => ({ ...n, read: true })) : prev);
++  }, []);
+ 
+   const clearNotification = useCallback((id) => {
+     setNotifications(prev => prev.filter(n => n.id !== id));
+-    setUnreadCount(prev => Math.max(0, prev - 1));
+   }, []);
+ 
+   return { unreadCount, notifications, markAllRead, clearNotification };
+-}
+\ No newline at end of file
++}
+\ No newline at end of file

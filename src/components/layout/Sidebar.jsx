@@ -106,7 +106,6 @@ const Sidebar = ({
   if (isSuperAdmin || (!isRestrictedArea && !isOperator)) {
     menuItems.push(
       { id: 'screenDashboard', label: 'Nuevo caso', target: 'sectionNewCase' },
-      { id: 'screenDashboard', label: 'Grupo familiar', target: 'sectionFamily' },
     );
   }
 

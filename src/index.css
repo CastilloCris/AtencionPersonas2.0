@@ -233,3 +233,50 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-in { animation: fadeIn 0.25s ease forwards; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Celular
+   ───────────────────────────────────────────────────────────────────────────── */
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 767px) {
+  /* iPhone hace zoom en cualquier campo con letra menor a 16px.
+     !important porque varios campos tienen text-xs como utilidad. */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Etiquetas legibles al sol y con una mano */
+  label {
+    font-size: 0.75rem;
+  }
+}
+
+/* Botones táctiles de las bandejas: altura mínima recomendada para el dedo (44px) */
+.tap {
+  min-height: 44px;
+}
+
+/* Hoja inferior (bottom sheet) */
+@keyframes subirHoja {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.hoja-entrar { animation: subirHoja 0.22s ease-out; }
+@media (min-width: 768px) {
+  .hoja-entrar { animation: fadeIn 0.2s ease forwards; }
+}
+
+/* Respeta la barra de gestos del iPhone */
+.pb-seguro { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+
+/* En celular ningún texto queda por debajo de 12px (había textos de 8–11px en casi todas las pantallas).
+   Va fuera de @layer para ganarle a las utilidades text-[9px], text-[10px], etc. */
+@media (max-width: 767px) {
+  .text-\[8px\], .text-\[9px\], .text-\[10px\], .text-\[11px\] { font-size: 12px; }
+  .pill { font-size: 0.75rem; }
+  th { font-size: 0.75rem; }
+}

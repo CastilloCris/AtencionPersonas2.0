@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { limpiarBusqueda, dniConPuntos } from '../../lib/texto';
+import { formatFecha } from '../../lib/fechas';
 
 const GlobalSearch = ({ onViewPerson }) => {
   const [query, setQuery] = useState('');
@@ -15,7 +17,10 @@ const GlobalSearch = ({ onViewPerson }) => {
     setStatus('Buscando...');
 
     try {
-      const term = query.trim();
+      // Se quitan puntos de DNIs ("12.345.678") y caracteres que rompen los filtros de Supabase
+      const crudo = query.trim();
+      const term = /^[\d.\s]+$/.test(crudo) ? crudo.replace(/\D/g, '') : limpiarBusqueda(crudo);
+      if (!term) { setStatus('Ingresá un término válido.'); return; }
       const isOnlyNumbers = /^\d+$/.test(term);
       const hasLetters = /[a-zA-Zà-ÿ]/.test(term);
 
@@ -26,7 +31,7 @@ const GlobalSearch = ({ onViewPerson }) => {
         const { data } = await supabase
           .from('persons')
           .select('*')
-          .eq('dni', term)
+          .in('dni', [term, dniConPuntos(term)])
           .limit(10);
         persons = data || [];
       } else if (hasLetters && !isOnlyNumbers) {
@@ -87,7 +92,9 @@ const GlobalSearch = ({ onViewPerson }) => {
           <div className="flex-1 space-y-1.5">
             <label className="text-[10px] uppercase font-bold text-muted">Término de búsqueda</label>
             <input 
-              placeholder="Buscar por DNI o apellido..." 
+              placeholder="Buscar por DNI o apellido..."
+              inputMode="search"
+              enterKeyHint="search" 
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="py-3! text-sm min-h-[44px]"
@@ -97,7 +104,7 @@ const GlobalSearch = ({ onViewPerson }) => {
             {loading ? 'Buscando...' : 'Buscar'}
           </button>
         </form>
-        <p className={`text-[10px] font-black uppercase tracking-widest mt-4 ${loading ? 'loading text-accent' : 'text-muted'}`}>{status}</p>
+        <p className={`text-xs font-semibold mt-4 ${loading ? 'loading text-accent' : 'text-muted'}`}>{status}</p>
 
         {results.persons.length > 0 && (
           <div className="mt-8 space-y-4">
@@ -105,7 +112,19 @@ const GlobalSearch = ({ onViewPerson }) => {
               <div className="w-2 h-2 rounded-full bg-accent"></div>
               <h3 className="text-sm font-black text-white uppercase tracking-tight">Personas encontradas</h3>
             </div>
-            <div className="tableWrap overflow-x-auto shadow-xl">
+            {/* Celular: tarjetas con el botón siempre visible */}
+            <ul className="md:hidden space-y-2">
+              {results.persons.map(x => (
+                <li key={x.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white font-semibold break-words">{x.apellido_nombre}</p>
+                    <p className="text-sm text-muted">DNI {x.dni}</p>
+                  </div>
+                  <button className="secondary tap px-3! text-sm shrink-0" onClick={() => onViewPerson(x.id)} disabled={false}>Ver ficha</button>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block tableWrap overflow-x-auto shadow-xl">
               <table className="w-full min-w-[500px]">
                 <thead><tr><th className="py-4">DNI</th><th>Nombre completo</th><th>Acción</th></tr></thead>
                 <tbody>
@@ -122,19 +141,76 @@ const GlobalSearch = ({ onViewPerson }) => {
           </div>
         )}
 
+        {/* Familiares: antes se buscaban pero nunca se mostraban */}
+        {results.family.length > 0 && (
+          <div className="mt-8 space-y-4">
+            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+              <div className="w-2 h-2 rounded-full bg-accent"></div>
+              <h3 className="text-sm font-black text-white uppercase tracking-tight">Registrados como familiares</h3>
+            </div>
+            {/* Celular: tarjetas con el botón siempre visible */}
+            <ul className="md:hidden space-y-2">
+              {results.family.map(x => (
+                <li key={x.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white font-semibold break-words">{x.apellido_nombres}</p>
+                    <p className="text-sm text-muted">{[x.vinculo, x.dni ? `DNI ${x.dni}` : null].filter(Boolean).join(' · ') || 'Familiar'}</p>
+                  </div>
+                  <button className="secondary tap px-3! text-sm shrink-0" onClick={() => onViewPerson(x.person_id)} disabled={!x.person_id}>Ver titular</button>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block tableWrap overflow-x-auto shadow-xl">
+              <table className="w-full min-w-[600px]">
+                <thead><tr><th className="py-4">DNI</th><th>Nombre</th><th>Vínculo</th><th>Acción</th></tr></thead>
+                <tbody>
+                  {results.family.map(m => (
+                    <tr key={m.id} className="hover:bg-white/5 transition-colors">
+                      <td className="font-mono text-xs py-4">{m.dni || '—'}</td>
+                      <td className="text-xs font-bold text-white uppercase">{m.apellido_nombres}</td>
+                      <td className="text-xs text-white/60">{m.vinculo || '—'}</td>
+                      <td>
+                        <button
+                          className="secondary py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-[36px]"
+                          onClick={() => onViewPerson(m.person_id)}
+                          disabled={!m.person_id}
+                        >
+                          Ver titular
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {results.cases.length > 0 && (
           <div className="mt-8 space-y-4">
             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
               <div className="w-2 h-2 rounded-full bg-accent"></div>
               <h3 className="text-sm font-black text-white uppercase tracking-tight">Casos relacionados</h3>
             </div>
-            <div className="tableWrap overflow-x-auto shadow-xl">
+            {/* Celular: tarjetas con el botón siempre visible */}
+            <ul className="md:hidden space-y-2">
+              {results.cases.map(x => (
+                <li key={x.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white font-semibold break-words">{x.apellido_nombre}</p>
+                    <p className="text-sm text-muted">{x.area_name || 'Sin área'} · {x.actual_date ? formatFecha(x.actual_date) : new Date(x.created_at).toLocaleDateString('es-AR')}</p>
+                  </div>
+                  <button className="secondary tap px-3! text-sm shrink-0" onClick={() => onViewPerson(x.person_id)} disabled={false}>Ver persona</button>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block tableWrap overflow-x-auto shadow-xl">
               <table className="w-full min-w-[600px]">
                 <thead><tr><th className="py-4">Fecha</th><th>Área</th><th>Persona</th><th>Acción</th></tr></thead>
                 <tbody>
                   {results.cases.map(c => (
                     <tr key={c.id} className="hover:bg-white/5 transition-colors">
-                      <td className="text-[10px] font-mono py-4 opacity-60">{new Date(c.actual_date || c.created_at).toLocaleDateString()}</td>
+                      <td className="text-[10px] font-mono py-4 opacity-60">{c.actual_date ? formatFecha(c.actual_date) : new Date(c.created_at).toLocaleDateString('es-AR')}</td>
                       <td><span className="pill text-[9px]">{c.area_name}</span></td>
                       <td className="text-xs font-bold text-white uppercase">{c.apellido_nombre}</td>
                       <td><button className="secondary py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-[36px]" onClick={() => onViewPerson(c.person_id)}>Ver persona</button></td>

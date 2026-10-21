@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { ArrowLeft, Save } from 'lucide-react';
+import { hoyLocal } from '../../../lib/fechas';
 
 const ModulosForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     cantidad: initialData?.cantidad ?? 1,
-    fecha_entrega: initialData?.fecha_entrega ?? new Date().toISOString().split('T')[0],
+    fecha_entrega: initialData?.fecha_entrega ?? hoyLocal(),
   });
 
   const handleSubmit = async (e) => {

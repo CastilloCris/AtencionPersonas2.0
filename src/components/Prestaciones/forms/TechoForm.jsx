@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { ArrowLeft, Save, Home, Plus, Trash2 } from 'lucide-react';
+import { hoyLocal } from '../../../lib/fechas';
 
 const UNIDADES = ['unidades', 'kg', 'metros', 'litros', 'bolsas', 'chapas', 'pares', 'rollos', 'cajas', 'otro'];
 
 const TechoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
   const [loading, setLoading] = useState(false);
   const [fecha_entrega, setFechaEntrega] = useState(
-    initialData?.fecha_entrega ?? new Date().toISOString().split('T')[0]
+    initialData?.fecha_entrega ?? hoyLocal()
   );
   const [observaciones, setObservaciones] = useState(initialData?.observaciones ?? '');
   const [items, setItems] = useState(() => {
@@ -20,7 +21,7 @@ const TechoForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }
   // Si initialData cambia (poco probable pero seguro)
   useEffect(() => {
     if (initialData) {
-      setFechaEntrega(initialData.fecha_entrega ?? new Date().toISOString().split('T')[0]);
+      setFechaEntrega(initialData.fecha_entrega ?? hoyLocal());
       setObservaciones(initialData.observaciones ?? '');
       if (initialData.items && Array.isArray(initialData.items) && initialData.items.length > 0) {
         setItems(initialData.items.map((i, idx) => ({ id: idx + 1, nombre: i.nombre, cantidad: i.cantidad, unidad: i.unidad })));

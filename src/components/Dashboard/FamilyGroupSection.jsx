@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { calcularEdad } from '../../lib/fechas';
 
 const FamilyGroupSection = ({ currentPerson }) => {
   const [members, setMembers] = useState([]);
@@ -16,16 +17,6 @@ const FamilyGroupSection = ({ currentPerson }) => {
   const loadMembers = async () => {
     const { data } = await supabase.from('family_members').select('*').eq('person_id', currentPerson.id).order('created_at');
     setMembers(data || []);
-  };
-
-  const calcularEdad = (fechaNac) => {
-    if (!fechaNac) return null;
-    const hoy = new Date();
-    const nac = new Date(fechaNac);
-    let edad = hoy.getFullYear() - nac.getFullYear();
-    const m = hoy.getMonth() - nac.getMonth();
-    if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
-    return edad >= 0 ? edad : null;
   };
 
   const getEdadDisplay = (m) => {

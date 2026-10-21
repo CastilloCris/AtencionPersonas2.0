@@ -1,0 +1,165 @@
+diff --git a/src/components/Cases/CasesList.jsx b/src/components/Cases/CasesList.jsx
+index 874d148..2681e64 100644
+--- a/src/components/Cases/CasesList.jsx
++++ b/src/components/Cases/CasesList.jsx
+@@ -11,15 +11,48 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
+     ingresos:    caseData.ingresos    ?? '',
+     actual_date: caseData.actual_date ? caseData.actual_date.split('T')[0] : (caseData.created_at?.split('T')[0] || ''),
+     estado:      caseData.estado      || 'abierto',
+-    // Datos de la persona
+-    telefono:    person?.telefono     || '',
+-    domicilio:   person?.domicilio    || '',
+-    trabaja:     person?.trabaja_actualmente || '',
+-    estado_civil: person?.estado_civil || '',
++    // Datos de la persona: se cargan desde la tabla persons (ver efecto abajo)
++    telefono:    '',
++    domicilio:   '',
++    trabaja:     '',
++    estado_civil: '',
+   });
+   const [saving, setSaving] = useState(false);
+   const [error, setError]   = useState('');
+ 
++  // ERROR CORREGIDO: antes estos campos se tomaban de la fila del CASO, que no los guarda.
++  // El formulario abría vacío y al guardar borraba teléfono, domicilio, estado civil y
++  // situación laboral de la persona. Ahora se leen de la ficha real de la persona.
++  const [personaOriginal, setPersonaOriginal] = useState(null);
++  const [cargandoPersona, setCargandoPersona] = useState(!!caseData.person_id);
++
++  useEffect(() => {
++    if (!caseData.person_id) return undefined;
++    let vigente = true;
++    supabase
++      .from('persons')
++      .select('telefono, domicilio, estado_civil, trabaja_actualmente')
++      .eq('id', caseData.person_id)
++      .maybeSingle()
++      .then(({ data, error: err }) => {
++        if (!vigente) return;
++        if (err || !data) {
++          setError('No se pudieron cargar los datos de la persona. Los datos personales no se modificarán.');
++        } else {
++          const original = {
++            telefono:     data.telefono || '',
++            domicilio:    data.domicilio || '',
++            trabaja:      data.trabaja_actualmente || '',
++            estado_civil: data.estado_civil || '',
++          };
++          setPersonaOriginal(original);
++          setForm(p => ({ ...p, ...original }));
++        }
++        setCargandoPersona(false);
++      });
++    return () => { vigente = false; };
++  }, [caseData.person_id]);
++
+   const handleSubmit = async (e) => {
+     e.preventDefault();
+     setSaving(true);
+@@ -35,16 +68,22 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
+       }).eq('id', caseData.id);
+       if (cErr) throw cErr;
+ 
+-      // Actualizar persona si tenemos person_id
+-      if (caseData.person_id) {
+-        const { error: pErr } = await supabase.from('persons').update({
+-          telefono:          form.telefono          || null,
+-          domicilio:         form.domicilio         || null,
+-          trabaja_actualmente: form.trabaja         || null,
+-          estado_civil:      form.estado_civil      || null,
+-          updated_at:        new Date().toISOString(),
+-        }).eq('id', caseData.person_id);
+-        if (pErr) throw pErr;
++      // Actualizar SOLO los datos de la persona que el usuario cambió.
++      // Si no se pudieron cargar (personaOriginal = null), no se toca la persona.
++      if (caseData.person_id && personaOriginal) {
++        const columna = { telefono: 'telefono', domicilio: 'domicilio', trabaja: 'trabaja_actualmente', estado_civil: 'estado_civil' };
++        const cambios = {};
++        for (const [campo, col] of Object.entries(columna)) {
++          const nuevo = (form[campo] || '').trim();
++          if (nuevo !== (personaOriginal[campo] || '').trim()) cambios[col] = nuevo || null;
++        }
++        if (Object.keys(cambios).length > 0) {
++          const { error: pErr } = await supabase.from('persons').update({
++            ...cambios,
++            updated_at: new Date().toISOString(),
++          }).eq('id', caseData.person_id);
++          if (pErr) throw pErr;
++        }
+       }
+ 
+       onSaved();
+@@ -153,9 +192,10 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
+ 
+           {/* Footer sticky */}
+           <div className="p-6 border-t border-white/5 flex gap-3 bg-white/2 shrink-0">
+-            <button type="submit" disabled={saving}
++            <button type="submit" disabled={saving || cargandoPersona}
+               className="primary flex-1 py-3! flex items-center justify-center gap-2 font-black">
+-              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Save className="w-4 h-4" /> Guardar Cambios</>}
++              {cargandoPersona ? <><Loader2 className="w-4 h-4 animate-spin" /> Cargando datos...</>
++                : saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Save className="w-4 h-4" /> Guardar Cambios</>}
+             </button>
+             <button type="button" onClick={onClose} className="secondary px-8! py-3!">Cancelar</button>
+           </div>
+diff --git a/supabase/02_buscar_datos_borrados.sql b/supabase/02_buscar_datos_borrados.sql
+new file mode 100644
+index 0000000..11b28ee
+--- /dev/null
++++ b/supabase/02_buscar_datos_borrados.sql
+@@ -0,0 +1,55 @@
++-- =============================================================================
++-- Ficha Social — Buscar fichas afectadas por el error de "Editar caso"
++-- Solo LEE datos: no modifica nada. Correr en SQL Editor.
++-- =============================================================================
++
++-- 1) Quién borró qué y cuándo (registrado por la auditoría desde la migración 01).
++--    Muestra las ediciones de personas que tocaron alguno de los 4 campos afectados
++--    y si HOY ese campo está vacío.
++select
++  a.created_at                           as cuando,
++  pr.full_name                           as quien,
++  p.dni,
++  p.apellido_nombre,
++  a.meta->'campos'                       as campos_modificados,
++  (p.telefono is null)                   as telefono_vacio,
++  (p.domicilio is null)                  as domicilio_vacio,
++  (p.estado_civil is null)               as estado_civil_vacio,
++  (p.trabaja_actualmente is null)        as laboral_vacio
++from public.audit_log a
++join public.persons p   on p.id::text = a.entity_id
++left join public.profiles pr on pr.user_id = a.actor_id
++where a.entity = 'persons'
++  and a.action = 'UPDATE'
++  and a.meta->'campos' ?| array['telefono','domicilio','estado_civil','trabaja_actualmente']
++order by a.created_at desc;
++
++-- 2) Datos que se pueden RECUPERAR: personas con campos vacíos cuyo valor
++--    todavía figura en alguno de sus casos (los casos viejos guardaban copia).
++select
++  p.dni,
++  p.apellido_nombre,
++  case when p.telefono is null then (
++    select c.telefono from public.cases c
++    where c.person_id = p.id and nullif(trim(c.telefono), '') is not null
++    order by c.created_at desc limit 1) end            as telefono_recuperable,
++  case when p.domicilio is null then (
++    select c.domicilio from public.cases c
++    where c.person_id = p.id and nullif(trim(c.domicilio), '') is not null
++    order by c.created_at desc limit 1) end            as domicilio_recuperable,
++  case when p.estado_civil is null then (
++    select c.estado_civil from public.cases c
++    where c.person_id = p.id and nullif(trim(c.estado_civil), '') is not null
++    order by c.created_at desc limit 1) end            as estado_civil_recuperable,
++  case when p.trabaja_actualmente is null then (
++    select c.trabaja_actualmente from public.cases c
++    where c.person_id = p.id and nullif(trim(c.trabaja_actualmente), '') is not null
++    order by c.created_at desc limit 1) end            as laboral_recuperable
++from public.persons p
++where (p.telefono is null or p.domicilio is null or p.estado_civil is null or p.trabaja_actualmente is null)
++  and exists (
++    select 1 from public.cases c
++    where c.person_id = p.id
++      and (nullif(trim(c.telefono), '') is not null or nullif(trim(c.domicilio), '') is not null
++           or nullif(trim(c.estado_civil), '') is not null or nullif(trim(c.trabaja_actualmente), '') is not null))
++order by p.apellido_nombre;

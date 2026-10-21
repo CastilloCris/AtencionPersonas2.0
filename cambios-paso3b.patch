@@ -1,0 +1,984 @@
+diff --git a/src/components/Cases/CasesList.jsx b/src/components/Cases/CasesList.jsx
+index 6808e03..874d148 100644
+--- a/src/components/Cases/CasesList.jsx
++++ b/src/components/Cases/CasesList.jsx
+@@ -177,6 +177,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+   });
+   const [grouped, setGrouped] = useState([]);
+   const [expanded, setExpanded] = useState({});
++  const [mostrarFiltros, setMostrarFiltros] = useState(false); // en celular los filtros arrancan plegados
+   const [status, setStatus] = useState('Aplicá filtros y cargá casos.');
+   const [loading, setLoading] = useState(false);
+   const [prestacionesList, setPrestacionesList] = useState([]);
+@@ -495,6 +496,17 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+           </div>
+         </div>
+ 
++        {/* Celular: los filtros ocupaban toda la pantalla antes de ver un resultado */}
++        <button
++          type="button"
++          onClick={() => setMostrarFiltros(v => !v)}
++          aria-expanded={mostrarFiltros}
++          className="md:hidden secondary tap w-full justify-between! mb-4 text-sm"
++        >
++          <span>Filtros{Object.values(filters).filter(Boolean).length > 0 ? ` (${Object.values(filters).filter(Boolean).length} activos)` : ''}</span>
++          <span aria-hidden>{mostrarFiltros ? '▲' : '▼'}</span>
++        </button>
++        <div className={mostrarFiltros ? '' : 'hidden md:block'}>
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+           <div className="space-y-1.5">
+             <label className="text-[10px] uppercase font-bold text-muted">Filtro DNI</label>
+@@ -550,6 +562,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+             <input id="to" type="date" value={filters.to} onChange={handleFilterChange} className="py-3! text-sm min-h-11" />
+           </div>
+         </div>
++        </div>
+ 
+         <div className="mt-6 p-4 rounded-xl bg-white/2 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+           <div className="space-y-1">
+@@ -586,7 +599,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+               <div key={person.person_id} className="rounded-2xl border border-white/8 overflow-hidden bg-white/2">
+ 
+                 {/* Fila principal de la persona */}
+-                <div className="flex items-center gap-4 px-5 py-4">
++                <div className="flex flex-wrap md:flex-nowrap items-center gap-3 md:gap-4 px-4 md:px-5 py-4">
+                   {/* Avatar inicial */}
+                   <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
+                     <span className="text-sm font-black text-accent">
+@@ -605,10 +618,10 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                     </p>
+                   </div>
+ 
+-                  {/* Acciones */}
+-                  <div className="flex items-center gap-2 shrink-0">
++                  {/* Acciones (en celular pasan a una fila propia, a lo ancho) */}
++                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto md:shrink-0">
+                     <button
+-                      className="secondary py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-9"
++                      className="secondary tap md:min-h-9 py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-9 flex-1 md:flex-none"
+                       onClick={() => onViewPerson && onViewPerson(person.person_id)}
+                     >
+                       Ver Ficha
+@@ -618,7 +631,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold
+                                    bg-accent/15 border border-accent/30 text-accent
+                                    hover:bg-accent/25 hover:border-accent/50
+-                                   active:scale-95 transition-all min-h-9"
++                                   active:scale-95 transition-all min-h-9 tap md:min-h-9 flex-1 md:flex-none justify-center"
+                         onClick={() => setEditCase({ caseData: lastCase, person: { apellido_nombre: person.apellido_nombre, ...lastCase } })}
+                       >
+                         ✏ Editar
+@@ -629,10 +642,12 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                         value={lastCase.estado || 'abierto'}
+                         onChange={async (e) => {
+                           const nuevoEstado = e.target.value;
+-                          await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', lastCase.id);
++                          const { error } = await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', lastCase.id);
++                          if (error) alert('No se pudo cambiar el estado: ' + error.message);
+                           fetchCases();
+                         }}
+-                        className="text-[9px] py-1! px-2! min-h-7 rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
++                        aria-label="Estado del caso"
++                        className="text-[9px] py-1! px-2! min-h-7 tap md:min-h-7 w-full md:w-auto rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
+                         onClick={(e) => e.stopPropagation()}
+                       >
+                         <option value="abierto">Abierto</option>
+@@ -643,7 +658,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                     )}
+                     {totalCases > 1 && (
+                       <button
+-                        className="secondary py-2! px-3! text-[10px] font-black uppercase tracking-widest min-h-9"
++                        className="secondary tap md:min-h-9 py-2! px-3! text-[10px] font-black uppercase tracking-widest min-h-9 w-full md:w-auto"
+                         onClick={() => toggleExpand(person.person_id)}
+                         title={isOpen ? 'Ocultar casos' : 'Ver todos los casos'}
+                       >
+@@ -654,7 +669,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                 </div>
+ 
+                 {/* Último caso resumido (siempre visible) */}
+-                <div className="px-5 pb-3 flex flex-wrap gap-4 border-t border-white/5 pt-3">
++                <div className="px-4 md:px-5 pb-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-white/5 pt-3">
+                   <span className="pill text-[9px]">{renderAreaName(lastCase)}</span>
+                   {/* Badge de estado */}
+                   <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+@@ -668,7 +683,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
+                   }`}>
+                     {lastCase.estado || 'abierto'}
+                   </span>
+-                  <span className="text-[10px] text-muted truncate max-w-50" title={lastCase.motivo}>{lastCase.motivo || 'Sin motivo'}</span>
++                  <span className="text-[10px] text-muted w-full md:w-auto md:truncate md:max-w-50" title={lastCase.motivo}>{lastCase.motivo || 'Sin motivo'}</span>
+                   <span className="text-[10px] font-mono text-accent ml-auto">${lastCase.ingresos?.toLocaleString() || '0'}</span>
+                   <span className="text-[10px] text-muted/50 font-mono">
+                     {formatFecha(lastCase.actual_date || lastCase.created_at)}
+diff --git a/src/components/Dashboard/Dashboard.jsx b/src/components/Dashboard/Dashboard.jsx
+index f0e38f6..f6dab0a 100644
+--- a/src/components/Dashboard/Dashboard.jsx
++++ b/src/components/Dashboard/Dashboard.jsx
+@@ -6,7 +6,7 @@ import PrestacionesSection from './PrestacionesSection';
+ const Dashboard = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId, setLastCaseId, onViewPerson, onOpenSelector, onEditPrestacion, prestacionesVersion }) => {
+   return (
+     <div className="space-y-8 animate-in fade-in duration-700">
+-      <div className="grid lg:grid-cols-1 gap-8">
++      <div className="grid grid-cols-1 gap-4 md:gap-8">
+         <NewCaseForm 
+           profile={profile} 
+           areas={areas} 
+@@ -18,7 +18,8 @@ const Dashboard = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId
+         />
+       </div>
+ 
+-      <div className="grid lg:grid-cols-2 gap-8 items-start">
++      {/* grid-cols-1 explícito: sin él la columna se estiraba a 624px en celular y toda la app se veía achicada */}
++      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 items-start">
+         <FamilyGroupSection currentPerson={currentPerson} />
+         <PrestacionesSection 
+           lastCaseId={lastCaseId} 
+diff --git a/src/components/DashboardArea.jsx b/src/components/DashboardArea.jsx
+index 3ea5424..2b368d1 100644
+--- a/src/components/DashboardArea.jsx
++++ b/src/components/DashboardArea.jsx
+@@ -9,13 +9,16 @@ import {
+ export default function DashboardArea({ profile, onViewPerson }) {
+   const areaId = profile?.areas?.id ?? null;
+   const areaNombre = profile?.areas?.name || 'Mi área';
++  // El superadmin supervisa: ve las derivaciones de TODAS las áreas (igual que sus notificaciones)
++  const esSuperadmin = profile?.role === 'superadmin';
+ 
+   const { audiencias, setAudiencias, loading, error, recargar } = useAudiencias({
+     estado: 'DERIVADO',
+-    areaId,
+-    habilitado: !!areaId,
+-    canal: `audiencias-area-${areaId}`,
++    areaId: esSuperadmin ? null : areaId,
++    habilitado: esSuperadmin || !!areaId,
++    canal: esSuperadmin ? 'audiencias-area-todas' : `audiencias-area-${areaId}`,
+   });
++  const [filtroArea, setFiltroArea] = useState('todas');
+   const [areas, setAreas] = useState([]);
+   const [accion, setAccion] = useState(null); // { audiencia, tipo: 'atender' | 'derivar' }
+   const [prestacion, setPrestacion] = useState('');
+@@ -87,9 +90,23 @@ export default function DashboardArea({ profile, onViewPerson }) {
+     }
+   };
+ 
+-  const urgentes = audiencias.filter(a => a.prioridad === 'urgente').length;
++  // Filtro por área (solo superadmin). Los chips muestran cuántas hay en cada área.
++  const conteoPorArea = esSuperadmin
++    ? Object.values(audiencias.reduce((acc, a) => {
++        const id = a.area_id || 'sin';
++        acc[id] = acc[id] || { id, nombre: a.area?.name || 'Sin área', total: 0 };
++        acc[id].total += 1;
++        return acc;
++      }, {})).sort((x, y) => x.nombre.localeCompare(y.nombre))
++    : [];
++  const filtroVigente = filtroArea !== 'todas' && !conteoPorArea.some(c => c.id === filtroArea) ? 'todas' : filtroArea;
++  const visibles = esSuperadmin && filtroVigente !== 'todas'
++    ? audiencias.filter(a => (a.area_id || 'sin') === filtroVigente)
++    : audiencias;
+ 
+-  if (!areaId) {
++  const urgentes = visibles.filter(a => a.prioridad === 'urgente').length;
++
++  if (!esSuperadmin && !areaId) {
+     return (
+       <div className="card text-center py-16">
+         <p className="text-white font-medium">Sin área asignada</p>
+@@ -101,9 +118,9 @@ export default function DashboardArea({ profile, onViewPerson }) {
+   return (
+     <section className="space-y-4 md:space-y-6 fade-in pb-24">
+       <EncabezadoBandeja
+-        titulo={`Bandeja — ${areaNombre}`}
+-        subtitulo={`Derivaciones recibidas · ${areaNombre}`}
+-        total={audiencias.length}
++        titulo={esSuperadmin ? 'Bandeja — Todas las áreas' : `Bandeja — ${areaNombre}`}
++        subtitulo={esSuperadmin ? 'Derivaciones pendientes en todas las áreas' : `Derivaciones recibidas · ${areaNombre}`}
++        total={visibles.length}
+         urgentes={urgentes}
+         loading={loading}
+         onActualizar={() => recargar()}
+@@ -111,18 +128,46 @@ export default function DashboardArea({ profile, onViewPerson }) {
+ 
+       <ErrorConexion mensaje={error} onReintentar={() => recargar()} />
+ 
++      {esSuperadmin && conteoPorArea.length > 1 && (
++        // Fila de filtros: en celular se desliza de costado dentro de su propio espacio
++        <div className="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto custom-scrollbar" role="tablist" aria-label="Filtrar por área">
++          <div className="flex gap-2 w-max pb-1">
++            {[{ id: 'todas', nombre: 'Todas', total: audiencias.length }, ...conteoPorArea].map(c => {
++              const activo = filtroVigente === c.id;
++              return (
++                <button
++                  key={c.id}
++                  type="button"
++                  role="tab"
++                  aria-selected={activo}
++                  onClick={() => setFiltroArea(c.id)}
++                  className={`tap px-4! rounded-full border text-sm whitespace-nowrap transition-colors
++                    ${activo ? 'bg-accent text-black border-accent font-semibold' : 'bg-white/5 text-white/80 border-white/15'}`}
++                >
++                  {c.nombre}
++                  <span className={`ml-1 text-xs ${activo ? 'text-black/70' : 'text-white/50'}`}>{c.total}</span>
++                </button>
++              );
++            })}
++          </div>
++        </div>
++      )}
++
+       {loading && audiencias.length === 0 ? (
+         <div className="text-center py-16 text-muted text-sm">Cargando derivaciones…</div>
+-      ) : audiencias.length === 0 ? (
+-        <BandejaVacia titulo="Sin derivaciones pendientes" detalle={`La bandeja de ${areaNombre} está al día`} />
++      ) : visibles.length === 0 ? (
++        <BandejaVacia
++          titulo="Sin derivaciones pendientes"
++          detalle={esSuperadmin ? 'Ninguna área tiene derivaciones sin atender' : `La bandeja de ${areaNombre} está al día`}
++        />
+       ) : (
+         <div className="grid gap-3 lg:grid-cols-2">
+-          {audiencias.map(a => {
++          {visibles.map(a => {
+             const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
+             const personaId = a.persona?.id || a.person_id;
+             return (
+               <article key={a.id} className={`card p-4! md:p-5! border-l-4 space-y-3 ${prio.borde} ${prio.card}`}>
+-                <CabeceraAudiencia a={a} />
++                <CabeceraAudiencia a={a} etiquetaArea={esSuperadmin ? `En: ${a.area?.name || 'Sin área'}` : null} />
+                 <Motivo texto={a.motivo} />
+                 {a.respuesta && (
+                   <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+@@ -193,7 +238,7 @@ export default function DashboardArea({ profile, onViewPerson }) {
+           ) : (
+             <fieldset className="space-y-2">
+               <legend className="text-sm text-muted mb-2">¿A qué área?</legend>
+-              {areas.filter(ar => ar.id !== areaId).map(ar => (
++              {areas.filter(ar => ar.id !== accion.audiencia.area_id).map(ar => (
+                 <button
+                   key={ar.id}
+                   type="button"
+diff --git a/src/components/People/PeopleModal.jsx b/src/components/People/PeopleModal.jsx
+index 084da43..82971f5 100644
+--- a/src/components/People/PeopleModal.jsx
++++ b/src/components/People/PeopleModal.jsx
+@@ -47,15 +47,16 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
+   if (!isOpen) return null;
+ 
+   return (
+-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-2000 flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-300">
+-      <div className="bg-card w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-[32px] border border-white/10 shadow-2xl flex flex-col">
++    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-2000 flex items-center justify-center p-0 md:p-8 animate-in fade-in duration-300">
++      {/* En celular ocupa toda la pantalla (antes quedaba corrida y cortada) */}
++      <div className="bg-card w-full min-w-0 max-w-full md:max-w-6xl h-full md:h-auto md:max-h-[90vh] overflow-hidden md:rounded-[32px] border-0 md:border border-white/10 shadow-2xl flex flex-col">
+         {/* Header */}
+-        <div className="p-6 md:p-8 border-b border-white/5 flex items-center justify-between bg-white/2">
++        <div className="px-4 py-3 md:p-8 border-b border-white/5 flex items-center justify-between gap-3 bg-white/2">
+           <div className="flex flex-col">
+-            <h2 className="text-2xl font-black tracking-tight">Gestión de Personas</h2>
++            <h2 className="text-xl md:text-2xl font-black tracking-tight">Gestión de Personas</h2>
+             <p className="text-[10px] uppercase font-bold text-accent tracking-widest">Base de datos de ciudadanos</p>
+           </div>
+-          <button className="danger p-3! rounded-2xl" onClick={onClose}>
++          <button className="danger tap min-w-[44px] p-2! md:p-3! rounded-2xl shrink-0" onClick={onClose} aria-label="Cerrar">
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+             </svg>
+@@ -63,8 +64,8 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
+         </div>
+ 
+         {/* Content */}
+-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+-          <form onSubmit={handleSearch} className="flex gap-4 items-end mb-8">
++        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
++          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end mb-6 md:mb-8">
+             <div className="flex-1">
+               <label>Buscar Ciudadano</label>
+               <input 
+@@ -72,14 +73,38 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
+                 value={search}
+                 onChange={(e) => setSearch(e.target.value)}
+                 className="bg-white/5"
++                enterKeyHint="search"
+               />
+             </div>
+-            <button className="primary px-8! h-[46px]" type="submit" disabled={loading}>
++            <button className="primary tap px-8! sm:h-[46px]" type="submit" disabled={loading}>
+               {loading ? 'Buscando...' : 'Buscar'}
+             </button>
+           </form>
+ 
+-          <div className="tableWrap bg-black/20">
++          {/* Celular: tarjetas */}
++          <ul className="md:hidden space-y-2">
++            {people.length === 0 && (
++              <li className="py-12 text-center text-sm text-muted">{status || 'Buscá por nombre, apellido o DNI'}</li>
++            )}
++            {people.map(p => (
++              <li key={p.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 space-y-2">
++                <div>
++                  <p className="text-white font-semibold break-words">{p.apellido_nombre}</p>
++                  <p className="text-sm text-muted font-mono">DNI {p.dni}</p>
++                </div>
++                {(p.telefono || p.domicilio) && (
++                  <p className="text-sm text-white/70 break-words">
++                    {[p.telefono, p.domicilio].filter(Boolean).join(' · ')}
++                  </p>
++                )}
++                <button className="secondary tap w-full text-sm" onClick={() => { onViewPerson(p.id); onClose(); }}>
++                  Ver ficha
++                </button>
++              </li>
++            ))}
++          </ul>
++
++          <div className="hidden md:block tableWrap bg-black/20">
+             <table>
+               <thead>
+                 <tr>
+@@ -128,8 +153,8 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
+         </div>
+ 
+         {/* Footer */}
+-        <div className="p-4 bg-black/20 text-center border-t border-white/5">
+-          <p className="text-[10px] text-muted font-bold uppercase tracking-widest">Total de resultados: {people.length}</p>
++        <div className="p-3 md:p-4 bg-black/20 text-center border-t border-white/5 pb-seguro">
++          <p className="text-xs text-muted font-semibold">Resultados: {people.length}</p>
+         </div>
+       </div>
+     </div>
+diff --git a/src/components/PersonDetail/PersonDetail.jsx b/src/components/PersonDetail/PersonDetail.jsx
+index 62072c8..6acbe93 100644
+--- a/src/components/PersonDetail/PersonDetail.jsx
++++ b/src/components/PersonDetail/PersonDetail.jsx
+@@ -170,141 +170,215 @@ const PersonDetail = ({ personId, onBack, onUsePerson, onViewPerson, profile, ba
+ 
+   if (loading || !person) return <div className="p-8 text-center text-white">{status}</div>;
+ 
++  const edad = calcularEdad(person.fecha_nacimiento);
++  const datos = [
++    ['DNI', person.dni],
++    ['Apellido y nombre', person.apellido_nombre],
++    ['Fecha de nacimiento', formatFecha(person.fecha_nacimiento)],
++    ['Edad', edad !== null ? `${edad} años` : '—'],
++    ['Domicilio', person.domicilio || '—', 'domicilio'],
++    ['Teléfono', person.telefono || '—', 'telefono'],
++    ['Estado civil', person.estado_civil || '—'],
++    ['Trabaja actualmente', person.trabaja_actualmente || '—'],
++    ['Creado', new Date(person.created_at).toLocaleString('es-AR')],
++    ['Actualizado', new Date(person.updated_at).toLocaleString('es-AR')],
++  ];
++
++  // En celular, teléfono y domicilio son accionables: llamar o abrir el mapa
++  const valorDato = (v, tipo) => {
++    if (tipo === 'telefono' && person.telefono) {
++      return <a href={`tel:${person.telefono.replace(/[^\d+]/g, '')}`} className="text-accent underline underline-offset-4">{v}</a>;
++    }
++    if (tipo === 'domicilio' && person.domicilio) {
++      const q = encodeURIComponent(`${person.domicilio}, Wanda, Misiones`);
++      return <a href={`https://www.google.com/maps/search/?api=1&query=${q}`} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-4">{v}</a>;
++    }
++    return v;
++  };
++
++  const describir = (item) => ({
++    tipo: item.type === 'case' ? '📋 Caso' : item.type === 'audiencia' ? '🎤 Audiencia' : '✓ Prestación',
++    fecha: item.type === 'case' && item.actual_date
++      ? formatFecha(item.actual_date)
++      : new Date(item.created_at).toLocaleDateString('es-AR'),
++    estado: item.type === 'audiencia' ? item.estado : (item.areas?.name || item.area?.name || item.area_name || '—'),
++    descripcion: item.type === 'case'
++      ? item.motivo
++      : item.type === 'audiencia' ? `Audiencia: ${item.motivo || '—'}` : item.nombre_prestacion,
++    detalle: item.type === 'case'
++      ? `Solución: ${item.solucion || '—'}`
++      : item.type === 'audiencia' ? (item.observaciones_area || '') : (item.resumen || ''),
++  });
++
+   return (
+-    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar">
+-      
+-      {/* Detalle de Persona — DATOS PERSONALES TABLA */}
+-      <section className="card mx-6 mt-6 mb-6">
+-        <div className="flex items-start justify-between gap-6 mb-6">
+-          <div>
+-            <h2 className="text-lg font-bold text-white">Detalle de Persona</h2>
+-            <p className="text-[10px] text-muted mt-1">
+-              {person.apellido_nombre} | DNI {person.dni}
++    <div className="flex flex-col h-full space-y-4 md:space-y-6 pb-8">
++
++      {/* Encabezado y acciones */}
++      <section className="card p-4! md:p-6!">
++        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
++          <div className="min-w-0">
++            <h2 className="text-xl font-bold text-white break-words">{person.apellido_nombre}</h2>
++            <p className="text-sm text-muted mt-1">
++              DNI {person.dni}{edad !== null ? ` · ${edad} años` : ''}
+             </p>
+           </div>
+-          <div className="flex gap-2">
++          <div className="grid grid-cols-2 md:flex gap-2 md:shrink-0">
+             {canUsePerson && onUsePerson && (
+-              <button onClick={() => onUsePerson(person)} className="primary py-2! px-6! text-sm">
++              <button onClick={() => onUsePerson(person)} className="primary tap col-span-2 text-sm">
+                 Usar esta persona
+               </button>
+             )}
+-            <button onClick={handlePrint} className="secondary py-2! px-6! text-sm">
+-              🖨️ Imprimir ficha
++            <button onClick={handlePrint} className="secondary tap text-sm">
++              🖨️ Imprimir
+             </button>
+-            <button onClick={onBack} className="secondary py-2! px-6! text-sm">
+-              {backLabel || 'Volver al Dashboard'}
++            <button onClick={onBack} className="secondary tap text-sm">
++              ← {backLabel || 'Volver'}
+             </button>
+           </div>
+         </div>
++      </section>
+ 
+-        <h3 className="text-sm font-bold text-white mb-4">Ficha completa</h3>
+-        
+-        {/* TABLA DE DATOS PERSONALES */}
+-        <div className="overflow-x-auto mb-6">
+-          <table className="w-full min-w-[600px] text-sm bg-black/40">
++      {/* Datos personales */}
++      <section className="card p-4! md:p-6!">
++        <h3 className="text-base font-bold text-white mb-3">Datos personales</h3>
++
++        {/* Celular: etiqueta arriba, valor abajo (nada se corta) */}
++        <dl className="md:hidden divide-y divide-white/5">
++          {datos.map(([k, v, tipo]) => (
++            <div key={k} className="py-2.5">
++              <dt className="text-xs text-muted">{k}</dt>
++              <dd className="text-base text-white font-medium break-words">{valorDato(v, tipo)}</dd>
++            </div>
++          ))}
++        </dl>
++
++        <div className="hidden md:block overflow-x-auto">
++          <table className="w-full text-sm bg-black/40">
+             <tbody className="divide-y divide-white/5">
+-              {[
+-                ['DNI', person.dni],
+-                ['Apellido y Nombre', person.apellido_nombre],
+-                ['Fecha nacimiento', formatFecha(person.fecha_nacimiento)],
+-                ['Edad', calcularEdad(person.fecha_nacimiento) !== null ? `${calcularEdad(person.fecha_nacimiento)} años` : '—'],
+-                ['Domicilio', person.domicilio || '—'],
+-                ['Teléfono', person.telefono || '—'],
+-                ['Estado civil', person.estado_civil || '—'],
+-                ['Trabaja actualmente', person.trabaja_actualmente || '—'],
+-                ['Creado', new Date(person.created_at).toLocaleString('es-AR')],
+-                ['Actualizado', new Date(person.updated_at).toLocaleString('es-AR')],
+-              ].map(([k, v], i) => (
+-                <tr key={i} className="hover:bg-white/2 transition-colors">
+-                  <th className="text-left px-4 py-3 w-1/3 text-[10px] font-black text-muted uppercase tracking-widest bg-white/2">{k}</th>
+-                  <td className="px-4 py-3 text-white font-semibold">{v}</td>
++              {datos.map(([k, v, tipo]) => (
++                <tr key={k} className="hover:bg-white/2 transition-colors">
++                  <th className="text-left px-4 py-3 w-1/3 text-xs font-bold text-muted uppercase tracking-wider bg-white/2">{k}</th>
++                  <td className="px-4 py-3 text-white font-semibold">{valorDato(v, tipo)}</td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+         </div>
+-
+-        {/* GRUPO FAMILIAR */}
+-        {family.length > 0 && (
+-          <div>
+-            <h3 className="text-sm font-bold text-white mb-4">Grupo familiar</h3>
+-            <div className="overflow-x-auto">
+-              <table className="w-full min-w-[600px] text-sm">
+-                <thead>
+-                  <tr className="border-b border-white/10 bg-black/40">
+-                    <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Nombre</th>
+-                    <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">DNI</th>
+-                    <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Vínculo</th>
+-                    <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Observaciones</th>
+-                  </tr>
+-                </thead>
+-                <tbody className="divide-y divide-white/5">
+-                  {family.map((m, i) => (
+-                    <tr key={i} className="hover:bg-white/2 transition-colors">
+-                      <td className="px-4 py-3 font-semibold text-white">{m.apellido_nombres || '—'}</td>
+-                      <td className="px-4 py-3 font-mono text-white/60">{m.dni || '—'}</td>
+-                      <td className="px-4 py-3 text-white/70">{m.vinculo || '—'}</td>
+-                      <td className="px-4 py-3 text-white/60 max-w-xs truncate">{m.observaciones || '—'}</td>
+-                    </tr>
+-                  ))}
+-                </tbody>
+-              </table>
+-            </div>
+-          </div>
+-        )}
+       </section>
+ 
+-      {/* Timeline Social — CON TODOS LOS DETALLES */}
+-      <section className="card mx-6 mb-8">
+-        <h2 className="text-lg font-bold text-white border-b border-white/5 pb-4 mb-4">Timeline Social ({timeline.length})</h2>
+-        {timeline.length > 0 ? (
+-          <div className="overflow-x-auto">
+-            <table className="w-full min-w-[1200px] text-sm">
++      {/* Grupo familiar */}
++      {family.length > 0 && (
++        <section className="card p-4! md:p-6!">
++          <h3 className="text-base font-bold text-white mb-3">Grupo familiar ({family.length})</h3>
++
++          <ul className="md:hidden space-y-2">
++            {family.map((m, i) => (
++              <li key={m.id || i} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3">
++                <div className="flex items-start justify-between gap-3">
++                  <div className="min-w-0">
++                    <p className="text-white font-semibold break-words">{m.apellido_nombres || '—'}</p>
++                    <p className="text-sm text-muted">
++                      {[m.vinculo, m.dni ? `DNI ${m.dni}` : null].filter(Boolean).join(' · ') || '—'}
++                    </p>
++                    {m.observaciones && <p className="text-sm text-white/70 mt-1">{m.observaciones}</p>}
++                  </div>
++                  {m.linkedPersonId && onViewPerson && (
++                    <button onClick={() => onViewPerson(m.linkedPersonId)} className="secondary tap px-3! text-sm shrink-0">
++                      Ver ficha
++                    </button>
++                  )}
++                </div>
++              </li>
++            ))}
++          </ul>
++
++          <div className="hidden md:block overflow-x-auto">
++            <table className="w-full text-sm">
+               <thead>
+                 <tr className="border-b border-white/10 bg-black/40">
+-                  <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Tipo</th>
+-                  <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Descripción</th>
+-                  <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Detalles / Resumen</th>
+-                  <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Estado / Área</th>
+-                  <th className="text-left px-4 py-3 text-[10px] font-black text-muted uppercase tracking-widest">Fecha</th>
++                  <th className="text-left px-4 py-3">Nombre</th>
++                  <th className="text-left px-4 py-3">DNI</th>
++                  <th className="text-left px-4 py-3">Vínculo</th>
++                  <th className="text-left px-4 py-3">Observaciones</th>
++                  <th className="px-4 py-3"></th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-white/5">
+-                {timeline.map((item, i) => {
+-                  const typeLabel = item.type === 'case' ? '📋 Caso' : item.type === 'audiencia' ? '🎤 Audiencia' : '✓ Prestación';
+-                  const dateStr = item.type === 'case' && item.actual_date 
+-                    ? formatFecha(item.actual_date)
+-                    : new Date(item.created_at).toLocaleDateString('es-AR');
+-                  const stateInfo = item.type === 'audiencia' ? item.estado : (item.area?.name || item.area_name || '—');
+-                  
+-                  // Descripción según tipo
+-                  const desc = item.type === 'case' 
+-                    ? item.motivo 
+-                    : item.type === 'audiencia' 
+-                    ? `Audiencia: ${item.motivo || '—'}` 
+-                    : item.nombre_prestacion;
+-
+-                  // Detalles/Resumen completo
+-                  const detalles = item.type === 'case'
+-                    ? `Motivo: ${item.motivo || '—'} | Solución: ${item.solucion || '—'}`
+-                    : item.type === 'audiencia'
+-                    ? item.observaciones_area || '—'
+-                    : item.resumen || '—';
+-
+-                  return (
+-                    <tr key={i} className="hover:bg-white/2 transition-colors">
+-                      <td className="px-4 py-3 font-bold text-white whitespace-nowrap">{typeLabel}</td>
+-                      <td className="px-4 py-3 text-white/70 text-xs max-w-xs">{desc}</td>
+-                      <td className="px-4 py-3 text-white/60 text-xs max-w-sm">{detalles}</td>
+-                      <td className="px-4 py-3 text-white/60 text-xs whitespace-nowrap">{stateInfo}</td>
+-                      <td className="px-4 py-3 text-white/60 font-mono text-xs whitespace-nowrap">{dateStr}</td>
+-                    </tr>
+-                  );
+-                })}
++                {family.map((m, i) => (
++                  <tr key={m.id || i} className="hover:bg-white/2 transition-colors">
++                    <td className="px-4 py-3 font-semibold text-white">{m.apellido_nombres || '—'}</td>
++                    <td className="px-4 py-3 font-mono text-white/60">{m.dni || '—'}</td>
++                    <td className="px-4 py-3 text-white/70">{m.vinculo || '—'}</td>
++                    <td className="px-4 py-3 text-white/60 max-w-xs">{m.observaciones || '—'}</td>
++                    <td className="px-4 py-3 text-right">
++                      {m.linkedPersonId && onViewPerson && (
++                        <button onClick={() => onViewPerson(m.linkedPersonId)} className="secondary py-1.5! px-3! text-xs">
++                          Ver ficha
++                        </button>
++                      )}
++                    </td>
++                  </tr>
++                ))}
+               </tbody>
+             </table>
+           </div>
+-        ) : (<p className="text-center text-muted/50 py-8">Sin eventos registrados</p>)}
++        </section>
++      )}
++
++      {/* Historial */}
++      <section className="card p-4! md:p-6!">
++        <h3 className="text-base font-bold text-white mb-3">Historial ({timeline.length})</h3>
++        {timeline.length === 0 ? (
++          <p className="text-center text-muted py-8">Sin eventos registrados</p>
++        ) : (
++          <>
++            {/* Celular: línea de tiempo en tarjetas */}
++            <ol className="md:hidden space-y-2">
++              {timeline.map((item, i) => {
++                const d = describir(item);
++                return (
++                  <li key={`${item.type}-${item.id || i}`} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3">
++                    <div className="flex items-center justify-between gap-2">
++                      <span className="text-sm font-semibold text-white">{d.tipo}</span>
++                      <span className="text-xs text-muted font-mono">{d.fecha}</span>
++                    </div>
++                    {d.descripcion && <p className="text-sm text-white/85 mt-1 break-words">{d.descripcion}</p>}
++                    {d.detalle && <p className="text-sm text-white/60 mt-1 break-words">{d.detalle}</p>}
++                    {d.estado && d.estado !== '—' && <p className="text-xs text-muted mt-1">{d.estado}</p>}
++                  </li>
++                );
++              })}
++            </ol>
++
++            <div className="hidden md:block overflow-x-auto">
++              <table className="w-full text-sm">
++                <thead>
++                  <tr className="border-b border-white/10 bg-black/40">
++                    <th className="text-left px-4 py-3">Tipo</th>
++                    <th className="text-left px-4 py-3">Descripción</th>
++                    <th className="text-left px-4 py-3">Detalle</th>
++                    <th className="text-left px-4 py-3">Estado / Área</th>
++                    <th className="text-left px-4 py-3">Fecha</th>
++                  </tr>
++                </thead>
++                <tbody className="divide-y divide-white/5">
++                  {timeline.map((item, i) => {
++                    const d = describir(item);
++                    return (
++                      <tr key={`${item.type}-${item.id || i}`} className="hover:bg-white/2 transition-colors">
++                        <td className="px-4 py-3 font-bold text-white whitespace-nowrap">{d.tipo}</td>
++                        <td className="px-4 py-3 text-white/70 text-sm max-w-xs">{d.descripcion}</td>
++                        <td className="px-4 py-3 text-white/60 text-sm max-w-sm">{d.detalle || '—'}</td>
++                        <td className="px-4 py-3 text-white/60 text-sm whitespace-nowrap">{d.estado}</td>
++                        <td className="px-4 py-3 text-white/60 font-mono text-sm whitespace-nowrap">{d.fecha}</td>
++                      </tr>
++                    );
++                  })}
++                </tbody>
++              </table>
++            </div>
++          </>
++        )}
+       </section>
+     </div>
+   );
+diff --git a/src/components/Search/GlobalSearch.jsx b/src/components/Search/GlobalSearch.jsx
+index e80e838..d30a8c8 100644
+--- a/src/components/Search/GlobalSearch.jsx
++++ b/src/components/Search/GlobalSearch.jsx
+@@ -92,7 +92,9 @@ const GlobalSearch = ({ onViewPerson }) => {
+           <div className="flex-1 space-y-1.5">
+             <label className="text-[10px] uppercase font-bold text-muted">Término de búsqueda</label>
+             <input 
+-              placeholder="Buscar por DNI o apellido..." 
++              placeholder="Buscar por DNI o apellido..."
++              inputMode="search"
++              enterKeyHint="search" 
+               value={query}
+               onChange={(e) => setQuery(e.target.value)}
+               className="py-3! text-sm min-h-[44px]"
+@@ -102,7 +104,7 @@ const GlobalSearch = ({ onViewPerson }) => {
+             {loading ? 'Buscando...' : 'Buscar'}
+           </button>
+         </form>
+-        <p className={`text-[10px] font-black uppercase tracking-widest mt-4 ${loading ? 'loading text-accent' : 'text-muted'}`}>{status}</p>
++        <p className={`text-xs font-semibold mt-4 ${loading ? 'loading text-accent' : 'text-muted'}`}>{status}</p>
+ 
+         {results.persons.length > 0 && (
+           <div className="mt-8 space-y-4">
+@@ -110,7 +112,19 @@ const GlobalSearch = ({ onViewPerson }) => {
+               <div className="w-2 h-2 rounded-full bg-accent"></div>
+               <h3 className="text-sm font-black text-white uppercase tracking-tight">Personas encontradas</h3>
+             </div>
+-            <div className="tableWrap overflow-x-auto shadow-xl">
++            {/* Celular: tarjetas con el botón siempre visible */}
++            <ul className="md:hidden space-y-2">
++              {results.persons.map(x => (
++                <li key={x.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 flex items-center gap-3">
++                  <div className="min-w-0 flex-1">
++                    <p className="text-white font-semibold break-words">{x.apellido_nombre}</p>
++                    <p className="text-sm text-muted">DNI {x.dni}</p>
++                  </div>
++                  <button className="secondary tap px-3! text-sm shrink-0" onClick={() => onViewPerson(x.id)} disabled={false}>Ver ficha</button>
++                </li>
++              ))}
++            </ul>
++            <div className="hidden md:block tableWrap overflow-x-auto shadow-xl">
+               <table className="w-full min-w-[500px]">
+                 <thead><tr><th className="py-4">DNI</th><th>Nombre completo</th><th>Acción</th></tr></thead>
+                 <tbody>
+@@ -134,7 +148,19 @@ const GlobalSearch = ({ onViewPerson }) => {
+               <div className="w-2 h-2 rounded-full bg-accent"></div>
+               <h3 className="text-sm font-black text-white uppercase tracking-tight">Registrados como familiares</h3>
+             </div>
+-            <div className="tableWrap overflow-x-auto shadow-xl">
++            {/* Celular: tarjetas con el botón siempre visible */}
++            <ul className="md:hidden space-y-2">
++              {results.family.map(x => (
++                <li key={x.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 flex items-center gap-3">
++                  <div className="min-w-0 flex-1">
++                    <p className="text-white font-semibold break-words">{x.apellido_nombres}</p>
++                    <p className="text-sm text-muted">{[x.vinculo, x.dni ? `DNI ${x.dni}` : null].filter(Boolean).join(' · ') || 'Familiar'}</p>
++                  </div>
++                  <button className="secondary tap px-3! text-sm shrink-0" onClick={() => onViewPerson(x.person_id)} disabled={!x.person_id}>Ver titular</button>
++                </li>
++              ))}
++            </ul>
++            <div className="hidden md:block tableWrap overflow-x-auto shadow-xl">
+               <table className="w-full min-w-[600px]">
+                 <thead><tr><th className="py-4">DNI</th><th>Nombre</th><th>Vínculo</th><th>Acción</th></tr></thead>
+                 <tbody>
+@@ -166,7 +192,19 @@ const GlobalSearch = ({ onViewPerson }) => {
+               <div className="w-2 h-2 rounded-full bg-accent"></div>
+               <h3 className="text-sm font-black text-white uppercase tracking-tight">Casos relacionados</h3>
+             </div>
+-            <div className="tableWrap overflow-x-auto shadow-xl">
++            {/* Celular: tarjetas con el botón siempre visible */}
++            <ul className="md:hidden space-y-2">
++              {results.cases.map(x => (
++                <li key={x.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 flex items-center gap-3">
++                  <div className="min-w-0 flex-1">
++                    <p className="text-white font-semibold break-words">{x.apellido_nombre}</p>
++                    <p className="text-sm text-muted">{x.area_name || 'Sin área'} · {x.actual_date ? formatFecha(x.actual_date) : new Date(x.created_at).toLocaleDateString('es-AR')}</p>
++                  </div>
++                  <button className="secondary tap px-3! text-sm shrink-0" onClick={() => onViewPerson(x.person_id)} disabled={false}>Ver persona</button>
++                </li>
++              ))}
++            </ul>
++            <div className="hidden md:block tableWrap overflow-x-auto shadow-xl">
+               <table className="w-full min-w-[600px]">
+                 <thead><tr><th className="py-4">Fecha</th><th>Área</th><th>Persona</th><th>Acción</th></tr></thead>
+                 <tbody>
+diff --git a/src/components/Stats/StatsDashboard.jsx b/src/components/Stats/StatsDashboard.jsx
+index 3502427..ce8b9f8 100644
+--- a/src/components/Stats/StatsDashboard.jsx
++++ b/src/components/Stats/StatsDashboard.jsx
+@@ -113,7 +113,7 @@ function AreaCompareTable({ data }) {
+     <div className="space-y-3">
+       {/* Header */}
+       <div className="grid gap-3 px-1"
+-           style={{ gridTemplateColumns: '1fr 80px 80px 120px' }}>
++           style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(2.75rem,80px) minmax(2.75rem,80px) minmax(3.5rem,120px)' }}>
+         <p className="text-[9px] uppercase font-black text-muted tracking-widest">Área</p>
+         <p className="text-[9px] uppercase font-black text-muted tracking-widest text-right">Casos</p>
+         <p className="text-[9px] uppercase font-black text-muted tracking-widest text-right">Prestac.</p>
+@@ -123,7 +123,7 @@ function AreaCompareTable({ data }) {
+       {data.map((row, i) => (
+         <div key={i}
+              className="grid gap-3 items-center px-3 py-2.5 rounded-xl bg-white/2 border border-white/5 hover:bg-white/4 transition-colors"
+-             style={{ gridTemplateColumns: '1fr 80px 80px 120px' }}>
++             style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(2.75rem,80px) minmax(2.75rem,80px) minmax(3.5rem,120px)' }}>
+ 
+           {/* Nombre área */}
+           <div className="flex items-center gap-2 min-w-0">
+@@ -160,7 +160,7 @@ function AreaCompareTable({ data }) {
+ 
+       {/* Totales */}
+       <div className="grid gap-3 items-center px-3 py-2 mt-1 border-t border-white/10"
+-           style={{ gridTemplateColumns: '1fr 80px 80px 120px' }}>
++           style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(2.75rem,80px) minmax(2.75rem,80px) minmax(3.5rem,120px)' }}>
+         <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Total</p>
+         <p className="text-xs font-mono text-accent/70 text-right font-bold">
+           {data.reduce((s, r) => s + r.casos, 0).toLocaleString('es-AR')}
+diff --git a/src/components/admin/AdminModal.jsx b/src/components/admin/AdminModal.jsx
+index 90514d9..7f5413a 100644
+--- a/src/components/admin/AdminModal.jsx
++++ b/src/components/admin/AdminModal.jsx
+@@ -1,6 +1,16 @@
+ import React, { useState, useEffect } from 'react';
+ import { supabase, crearClienteTemporal } from '../../lib/supabase';
+ 
++// Textos legibles para la bitácora de auditoría
++const ACCIONES = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Baja' };
++const ENTIDADES = {
++  persons: 'Persona', cases: 'Caso', family_members: 'Familiar', audiencias: 'Audiencia', profiles: 'Usuario', areas: 'Área',
++  as_construyendo_techo: 'Construyendo Techo', as_funebre: 'Servicio Fúnebre', as_modulos_alimenticios: 'Módulos Alimenticios',
++  as_viajes_movil: 'Viaje Móvil', case_prestaciones: 'Prestación', cic_combustible: 'Combustible', cic_economico: 'Ayuda Económica',
++  cic_medicamentos: 'Ayuda Medicamentos', cic_pasajes: 'Pasajes', farmacia_pacientes: 'Paciente Farmacia',
++  farmacia_medicamentos: 'Medicación Farmacia', farmacia_entregas: 'Entrega Farmacia',
++};
++
+ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+   const [activeTab, setActiveTab] = useState('users');
+   const [users, setUsers] = useState([]);
+@@ -35,7 +45,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+       .order('full_name');
+     
+     if (error) setStatus(`Error: ${error.message}`);
+-    else setUsers(data || []);
++    else { setUsers(data || []); setStatus(''); }
+     setLoading(false);
+   };
+ 
+@@ -49,13 +59,18 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+       .limit(50);
+     
+     if (error) setStatus(`Error: ${error.message}`);
+-    else setAuditLogs(data || []);
++    else { setAuditLogs(data || []); setStatus(''); }
+     setLoading(false);
+   };
+ 
+   const handleUpdateUser = async (userId, updates) => {
+-    const { error } = await supabase.from('profiles').update(updates).eq('user_id', userId);
+-    if (!error) loadUsers();
++    if (updates.is_active === false && !window.confirm('¿Suspender este usuario? Pierde el acceso de inmediato.')) return;
++    const { data, error } = await supabase.from('profiles').update(updates).eq('user_id', userId).select('user_id');
++    // Antes un error (o un cambio sin permiso) pasaba en silencio
++    if (error) { setStatus(`Error: ${error.message}`); return; }
++    if (!data || data.length === 0) { setStatus('No se pudo guardar el cambio (sin permiso).'); return; }
++    setStatus('Cambio guardado.');
++    loadUsers();
+   };
+ 
+   const handleCreateUser = async (e) => {
+@@ -155,7 +170,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+           {['users', 'areas', 'audit'].map(tab => (
+             <button 
+               key={tab}
+-              className={`py-4 text-[10px] md:text-xs uppercase font-black tracking-widest border-b-2 transition-all whitespace-nowrap min-h-[44px] ${activeTab === tab ? 'border-(--accent) text-(--accent)' : 'border-transparent text-(--muted) hover:text-white'}`}
++              className={`py-4 text-xs md:text-xs uppercase font-black tracking-widest border-b-2 transition-all whitespace-nowrap min-h-[44px] ${activeTab === tab ? 'border-(--accent) text-(--accent)' : 'border-transparent text-(--muted) hover:text-white'}`}
+               onClick={() => setActiveTab(tab)}
+             >
+               {tab === 'users' ? 'Usuarios' : tab === 'areas' ? 'Áreas' : 'Auditoría'}
+@@ -245,7 +260,47 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+                   </form>
+                 </div>
+               )}
+-              <div className="tableWrap shadow-2xl overflow-x-auto">
++              {/* Celular: una tarjeta por usuario */}
++              <div className="md:hidden space-y-3">
++                {users.map(u => (
++                  <div key={u.user_id} className={`rounded-2xl border p-4 space-y-3 ${u.is_active ? 'bg-white/3 border-white/10' : 'bg-red-500/5 border-red-500/25'}`}>
++                    <div className="flex items-start justify-between gap-3">
++                      <div className="min-w-0">
++                        <p className="font-semibold text-white text-base break-words">{u.full_name || 'Sin nombre'}</p>
++                        <p className="text-sm text-muted">{u.areas?.name || 'Sin área asignada'}</p>
++                      </div>
++                      <span className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-md border ${u.is_active ? 'bg-teal-500/10 text-teal-300 border-teal-500/30' : 'bg-red-500/10 text-red-300 border-red-500/30'}`}>
++                        {u.is_active ? 'Activo' : 'Suspendido'}
++                      </span>
++                    </div>
++                    <div className="grid grid-cols-2 gap-2">
++                      <div>
++                        <label htmlFor={`rol-${u.user_id}`}>Rol</label>
++                        <select id={`rol-${u.user_id}`} className="tap" value={u.role} onChange={(e) => handleUpdateUser(u.user_id, { role: e.target.value })}>
++                          <option value="operator">Operador</option>
++                          <option value="admin">Administrador</option>
++                          <option value="superadmin">SuperAdmin</option>
++                        </select>
++                      </div>
++                      <div>
++                        <label htmlFor={`area-${u.user_id}`}>Área</label>
++                        <select id={`area-${u.user_id}`} className="tap" value={u.default_area_id || ''} onChange={(e) => handleUpdateUser(u.user_id, { default_area_id: e.target.value || null })}>
++                          <option value="">Sin área</option>
++                          {availableAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
++                        </select>
++                      </div>
++                    </div>
++                    <button
++                      className={`${u.is_active ? 'danger' : 'primary'} tap w-full text-sm`}
++                      onClick={() => handleUpdateUser(u.user_id, { is_active: !u.is_active })}
++                    >
++                      {u.is_active ? 'Suspender' : 'Activar'}
++                    </button>
++                  </div>
++                ))}
++              </div>
++
++              <div className="hidden md:block tableWrap shadow-2xl overflow-x-auto">
+                 <table className="w-full min-w-[600px]">
+                   <thead>
+                     <tr><th>Usuario</th><th>Rol</th><th>Área Asignada</th><th>Estado</th><th>Acciones</th></tr>
+@@ -310,7 +365,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+                   className="primary text-xs px-4! py-3! min-h-[44px]" 
+                   onClick={() => setIsAddingArea(prev => !prev)}
+                 >
+-                  {isAddingArea ? 'Cancelar' : '[TEST] + Nueva Área'}
++                  {isAddingArea ? 'Cancelar' : '+ Nueva área'}
+                 </button>
+               </div>
+ 
+@@ -353,15 +408,32 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+           {activeTab === 'audit' && (
+             <div className="space-y-6">
+               <h3 className="text-lg font-bold">Bitácora de Eventos</h3>
+-              <div className="tableWrap shadow-2xl overflow-x-auto">
++              <div className="md:hidden space-y-2">
++                {auditLogs.length === 0 && <p className="text-sm text-muted text-center py-8">Sin eventos registrados.</p>}
++                {auditLogs.map(l => (
++                  <div key={l.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3">
++                    <div className="flex items-center justify-between gap-2">
++                      <span className="text-sm font-semibold text-white">
++                        {ACCIONES[l.action] || l.action} · {ENTIDADES[l.entity] || l.entity}
++                      </span>
++                      <span className="text-xs text-muted whitespace-nowrap">{new Date(l.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
++                    </div>
++                    <p className="text-sm text-white/70 mt-0.5">
++                      {users.find(u => u.user_id === l.actor_id)?.full_name || (l.actor_id ? l.actor_id.slice(0, 8) : 'Sistema')}
++                    </p>
++                    {l.meta?.campos && <p className="text-xs text-muted mt-0.5">Cambió: {l.meta.campos.join(', ')}</p>}
++                  </div>
++                ))}
++              </div>
++              <div className="hidden md:block tableWrap shadow-2xl overflow-x-auto">
+                 <table className="w-full min-w-[600px]">
+                   <thead><tr><th>Fecha / Hora</th><th>Acción</th><th>Entidad</th><th>Operador</th></tr></thead>
+                   <tbody>
+                     {auditLogs.map(l => (
+                       <tr key={l.id}>
+                         <td className="text-[11px] font-mono py-4 whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
+-                        <td><span className="pill text-[10px] uppercase">{l.action}</span></td>
+-                        <td className="text-xs text-(--muted)">{l.entity}</td>
++                        <td><span className="pill text-[10px] uppercase">{ACCIONES[l.action] || l.action}</span></td>
++                        <td className="text-xs text-(--muted)">{ENTIDADES[l.entity] || l.entity}</td>
+                         <td className="text-xs">
+                           {users.find(u => u.user_id === l.actor_id)?.full_name || (l.actor_id ? l.actor_id.slice(0, 8) : 'Sistema')}
+                           {l.meta?.campos && (
+@@ -379,7 +451,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+         
+         {/* Footer */}
+         <div className="p-4 bg-black/20 text-center border-t border-white/5">
+-          <p className="text-[10px] text-(--muted) font-bold uppercase tracking-widest">{status || 'Listo'}</p>
++          <p className="text-xs text-(--muted) font-semibold" role="status">{status || 'Listo'}</p>
+         </div>
+       </div>
+     </div>
+diff --git a/src/components/layout/Sidebar.jsx b/src/components/layout/Sidebar.jsx
+index dde7dde..6886279 100644
+--- a/src/components/layout/Sidebar.jsx
++++ b/src/components/layout/Sidebar.jsx
+@@ -106,7 +106,6 @@ const Sidebar = ({
+   if (isSuperAdmin || (!isRestrictedArea && !isOperator)) {
+     menuItems.push(
+       { id: 'screenDashboard', label: 'Nuevo caso', target: 'sectionNewCase' },
+-      { id: 'screenDashboard', label: 'Grupo familiar', target: 'sectionFamily' },
+     );
+   }
+ 
+diff --git a/src/index.css b/src/index.css
+index 54e9f55..f88b51f 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -272,3 +272,11 @@ html {
+ 
+ /* Respeta la barra de gestos del iPhone */
+ .pb-seguro { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
++
++/* En celular ningún texto queda por debajo de 12px (había textos de 8–11px en casi todas las pantallas).
++   Va fuera de @layer para ganarle a las utilidades text-[9px], text-[10px], etc. */
++@media (max-width: 767px) {
++  .text-\[8px\], .text-\[9px\], .text-\[10px\], .text-\[11px\] { font-size: 12px; }
++  .pill { font-size: 0.75rem; }
++  th { font-size: 0.75rem; }
++}

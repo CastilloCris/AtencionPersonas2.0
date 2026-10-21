@@ -1,0 +1,50 @@
+
+=== ANTES (esquema actual) ===
+✘ S1 Sin login: leer casos (DNI, domicilio, ingresos) vía cases_readable
+     → 1
+✘ S2 Sin login: volcar personas con rpc global_search('')
+     → 1
+✘ S3 Sin login: leer todas_las_prestaciones
+     → 2
+✘ S4 Registro público con role=superadmin en metadata (queda activo?)
+     → superadmin/true
+✘ S5 Operador se cambia el rol a superadmin
+     → superadmin
+✘ S6 Operador activa a un usuario dado de baja
+     → t
+✘ S7 Usuario dado de baja sigue leyendo personas
+     → 1
+✘ S8 Operador de Acción Social lee diagnósticos de Farmacia
+     → 1
+✔ N1 Operador busca persona por DNI
+     → 1
+✔ N2 Operador crea persona y caso
+     → ok
+✔ N3 Operador ve el historial (todas_las_prestaciones)
+     → 2
+✔ N4 Farmacia lee sus pacientes
+     → 1
+✔ N5 Mesa de Entrada crea audiencia
+     → ok
+✔ N6 Superadmin activa usuario y cambia rol
+     → operator/true
+✔ N7 Operador lee perfiles (nombre del creador)
+     → 5
+✔ N8 Alertas sociales (rpc get_social_alerts)
+     → 1
+✘ F1 Guardar Ayuda Económica
+     → ERROR: ERROR:  new row violates row-level security policy for table "cic_economico"
+✘ F2 Ayuda Económica aparece en el historial
+     → ERROR: ERROR:  new row violates row-level security policy for table "cic_economico"
+✘ F3 Editar Ayuda Medicamentos
+     → 5000
+✘ F4 Techo sin materiales aparece en el historial
+     → 1
+✘ F5 Prestación rápida (case_prestaciones) aparece en el historial
+     → 0
+✘ F6 Superadmin renombra un área
+     → CIC
+✘ F7 Se registra auditoría al editar una persona
+     → 0
+
+8/23 en estado correcto

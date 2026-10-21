@@ -1,0 +1,151 @@
+diff --git a/src/App.jsx b/src/App.jsx
+index 1f2cfd4..3e7331e 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -78,9 +78,9 @@ function App() {
+         .eq('user_id', userId)
+         .maybeSingle();
+       if (error) throw error;
+-      if (data?.is_active === false) {
++      if (!data || data.is_active !== true) {
+         await supabase.auth.signOut();
+-        alert('Cuenta desactivada.');
++        alert('Tu cuenta no está activa. Pedile al administrador del sistema que la active.');
+         return;
+       }
+       setProfile(data);
+diff --git a/src/components/Dashboard/PrestacionesSection.jsx b/src/components/Dashboard/PrestacionesSection.jsx
+index 32dc2eb..fd5eaa9 100644
+--- a/src/components/Dashboard/PrestacionesSection.jsx
++++ b/src/components/Dashboard/PrestacionesSection.jsx
+@@ -157,7 +157,8 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion, pre
+       case_id: activeCaseId,
+       prestacion_id: selectedPrestacion.id,
+       nombre_prestacion: selectedPrestacion.nombre,
+-      resumen: resumen || null,
++      // La tabla no tiene columna 'resumen' (el insert fallaba siempre): va en observaciones
++      observaciones: resumen || null,
+     });
+     if (error) {
+       showToast('Error al guardar: ' + error.message, 'error');
+diff --git a/src/components/admin/AdminModal.jsx b/src/components/admin/AdminModal.jsx
+index cb88e03..90514d9 100644
+--- a/src/components/admin/AdminModal.jsx
++++ b/src/components/admin/AdminModal.jsx
+@@ -1,5 +1,5 @@
+ import React, { useState, useEffect } from 'react';
+-import { supabase } from '../../lib/supabase';
++import { supabase, crearClienteTemporal } from '../../lib/supabase';
+ 
+ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+   const [activeTab, setActiveTab] = useState('users');
+@@ -17,7 +17,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+     if (isOpen) {
+       loadAvailableAreas();
+       if (activeTab === 'users') loadUsers();
+-      if (activeTab === 'audit') loadAudit();
++      if (activeTab === 'audit') { loadAudit(); loadUsers(); }
+     }
+   }, [isOpen, activeTab]);
+ 
+@@ -64,46 +64,33 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+     setStatus('Procesando registro...');
+     
+     try {
+-      // 1. Crear usuario en Auth de Supabase
+-      const { data, error: authError } = await supabase.auth.signUp({
++      // 1. Crear usuario en Auth con un cliente temporal (no toca la sesión del admin)
++      const { data, error: authError } = await crearClienteTemporal().auth.signUp({
+         email: newUser.email,
+         password: newUser.password,
+-        options: {
+-          data: {
+-            full_name: newUser.fullName,
+-            area_id: newUser.areaId || null,
+-            role: newUser.role || 'operator'
+-          }
+-        }
++        options: { data: { full_name: newUser.fullName } },
+       });
+ 
+       if (authError) throw authError;
++      // Supabase devuelve un usuario sin identidades cuando el email ya existe
++      if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
++        throw new Error('Ese email ya está registrado.');
++      }
+ 
+       if (data?.user) {
+-        // 2. Crear perfil en la tabla profiles
++        // 2. El trigger crea el perfil como operator INACTIVO (nadie elige su propio rol).
++        //    El superadmin, con su sesión, le asigna rol y área y lo activa.
+         const { error: profileError } = await supabase
+           .from('profiles')
+-          .insert({
++          .upsert({
+             user_id: data.user.id,
+             full_name: newUser.fullName,
+             role: newUser.role,
+             default_area_id: newUser.areaId || null,
+-            is_active: true
+-          });
++            is_active: true,
++          }, { onConflict: 'user_id' });
+ 
+-        // Si el insert falla porque el perfil ya existe (por un trigger de base de datos)
+-        if (profileError && profileError.code === '23505') {
+-          await supabase
+-            .from('profiles')
+-            .update({
+-              full_name: newUser.fullName,
+-              role: newUser.role,
+-              default_area_id: newUser.areaId || null
+-            })
+-            .eq('user_id', data.user.id);
+-        } else if (profileError) {
+-          throw profileError;
+-        }
++        if (profileError) throw profileError;
+ 
+         setStatus('Usuario y perfil creados correctamente.');
+         setIsAddingUser(false);
+@@ -375,7 +362,12 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
+                         <td className="text-[11px] font-mono py-4 whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
+                         <td><span className="pill text-[10px] uppercase">{l.action}</span></td>
+                         <td className="text-xs text-(--muted)">{l.entity}</td>
+-                        <td className="text-[10px] font-mono truncate max-w-[120px]">{l.actor_user_id}</td>
++                        <td className="text-xs">
++                          {users.find(u => u.user_id === l.actor_id)?.full_name || (l.actor_id ? l.actor_id.slice(0, 8) : 'Sistema')}
++                          {l.meta?.campos && (
++                            <span className="block text-[10px] text-(--muted)">Cambió: {l.meta.campos.join(', ')}</span>
++                          )}
++                        </td>
+                       </tr>
+                     ))}
+                   </tbody>
+diff --git a/src/lib/supabase.js b/src/lib/supabase.js
+index 0f04190..c9982ad 100644
+--- a/src/lib/supabase.js
++++ b/src/lib/supabase.js
+@@ -3,4 +3,19 @@ import { createClient } from "@supabase/supabase-js";
+ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+ 
+-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+\ No newline at end of file
++export const supabase = createClient(supabaseUrl, supabaseAnonKey);
++
++/**
++ * Cliente descartable que NO guarda sesión.
++ * Se usa para dar de alta usuarios: si signUp se hace con el cliente principal,
++ * Supabase puede iniciar sesión como el usuario nuevo y el admin pierde la suya.
++ */
++export const crearClienteTemporal = () =>
++  createClient(supabaseUrl, supabaseAnonKey, {
++    auth: {
++      persistSession: false,
++      autoRefreshToken: false,
++      detectSessionInUrl: false,
++      storageKey: 'ficha-social-alta-temporal',
++    },
++  });
+\ No newline at end of file

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import { formatFecha } from '../../lib/fechas';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ function AreaCompareTable({ data }) {
     <div className="space-y-3">
       {/* Header */}
       <div className="grid gap-3 px-1"
-           style={{ gridTemplateColumns: '1fr 80px 80px 120px' }}>
+           style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(2.75rem,80px) minmax(2.75rem,80px) minmax(3.5rem,120px)' }}>
         <p className="text-[9px] uppercase font-black text-muted tracking-widest">Área</p>
         <p className="text-[9px] uppercase font-black text-muted tracking-widest text-right">Casos</p>
         <p className="text-[9px] uppercase font-black text-muted tracking-widest text-right">Prestac.</p>
@@ -122,7 +123,7 @@ function AreaCompareTable({ data }) {
       {data.map((row, i) => (
         <div key={i}
              className="grid gap-3 items-center px-3 py-2.5 rounded-xl bg-white/2 border border-white/5 hover:bg-white/4 transition-colors"
-             style={{ gridTemplateColumns: '1fr 80px 80px 120px' }}>
+             style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(2.75rem,80px) minmax(2.75rem,80px) minmax(3.5rem,120px)' }}>
 
           {/* Nombre área */}
           <div className="flex items-center gap-2 min-w-0">
@@ -159,7 +160,7 @@ function AreaCompareTable({ data }) {
 
       {/* Totales */}
       <div className="grid gap-3 items-center px-3 py-2 mt-1 border-t border-white/10"
-           style={{ gridTemplateColumns: '1fr 80px 80px 120px' }}>
+           style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(2.75rem,80px) minmax(2.75rem,80px) minmax(3.5rem,120px)' }}>
         <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Total</p>
         <p className="text-xs font-mono text-accent/70 text-right font-bold">
           {data.reduce((s, r) => s + r.casos, 0).toLocaleString('es-AR')}
@@ -664,7 +665,7 @@ async function exportarExcelDetalle(detalle, filters) {
     'Módulos Alimenticios': ['Cantidad de Módulos', 'Fecha de Entrega'],
     'Viaje Móvil Social':   ['Destino', 'Fecha', 'Salida Wanda', 'Llegada Destino', 'Salida Destino', 'Llegada Wanda'],
     'Servicio Fúnebre':     ['Nombre Fallecido', 'Apellido Fallecido', 'Fecha Fallecimiento', 'Recibió Módulo'],
-    'Construyendo Techo':   ['Chapas Zinc', 'Tirantes', 'Clavadores', 'Clavos (kg)', 'Cumbreras', 'Fecha Entrega'],
+    'Construyendo Techo':   ['Materiales', 'Fecha Entrega'],
   };
 
   const extraRow = (r) => {
@@ -681,7 +682,7 @@ async function exportarExcelDetalle(detalle, filters) {
     if (filters.prestacion === 'Servicio Fúnebre')
       return [r.nombre_fallecido || '—', r.apellido_fallecido || '—', r.fecha_fallecimiento || '—', r.recibio_modulo ? 'Sí' : 'No'];
     if (filters.prestacion === 'Construyendo Techo')
-      return [r.chapa_zinc || 0, r.tirantes || 0, r.clavadores || 0, r.clavos_kg || 0, r.cumbreras || 0, r.fecha_entrega || '—'];
+      return [r.items || r.resumen || '—', r.fecha_entrega || '—'];
     return [];
   };
 
@@ -757,7 +758,7 @@ async function exportarPDFDetalle(detalle, filters, filtroTexto) {
   const colConfig = {
     'Pasajes de Ómnibus': {
       head: ['N°', 'Apellido y Nombre', 'DNI', 'Destino', 'Fecha Turno', 'Tipo Viaje', 'Acomp.', 'Motivo'],
-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha_turno ? new Date(r.fecha_turno).toLocaleDateString('es-AR') : '—', tipoViajeLbl[r.tipo_viaje]||r.tipo_viaje||'—', r.cantidad_acompanantes??0, r.motivo_viaje||'—'],
+      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha_turno ? formatFecha(r.fecha_turno) : '—', tipoViajeLbl[r.tipo_viaje]||r.tipo_viaje||'—', r.cantidad_acompanantes??0, r.motivo_viaje||'—'],
     },
     'Carga de Combustible': {
       head: ['N°', 'Apellido y Nombre', 'DNI', 'Litros', 'Tipo', 'Patente', 'Destino', 'Motivo'],
@@ -769,19 +770,19 @@ async function exportarPDFDetalle(detalle, filters, filtroTexto) {
     },
     'Módulos Alimenticios': {
       head: ['N°', 'Apellido y Nombre', 'DNI', 'Área', 'Cantidad', 'Fecha Entrega'],
-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.cantidad||0, r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'],
+      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.cantidad||0, r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'],
     },
     'Viaje Móvil Social': {
       head: ['N°', 'Apellido y Nombre', 'DNI', 'Destino', 'Fecha', 'Salida Wanda', 'Llegada Dest.', 'Salida Dest.', 'Llegada Wanda'],
-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha ? new Date(r.fecha).toLocaleDateString('es-AR') : '—', r.hora_salida_wanda||'—', r.hora_llegada_destino||'—', r.hora_salida_destino||'—', r.hora_llegada_wanda||'—'],
+      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.destino||'—', r.fecha ? formatFecha(r.fecha) : '—', r.hora_salida_wanda||'—', r.hora_llegada_destino||'—', r.hora_salida_destino||'—', r.hora_llegada_wanda||'—'],
     },
     'Servicio Fúnebre': {
       head: ['N°', 'Apellido y Nombre', 'DNI', 'Fallecido', 'Fecha Fallec.', 'Recibió Módulo'],
-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', `${r.nombre_fallecido||''} ${r.apellido_fallecido||''}`.trim()||'—', r.fecha_fallecimiento ? new Date(r.fecha_fallecimiento).toLocaleDateString('es-AR') : '—', r.recibio_modulo ? 'Sí' : 'No'],
+      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', `${r.nombre_fallecido||''} ${r.apellido_fallecido||''}`.trim()||'—', r.fecha_fallecimiento ? formatFecha(r.fecha_fallecimiento) : '—', r.recibio_modulo ? 'Sí' : 'No'],
     },
     'Construyendo Techo': {
-      head: ['N°', 'Apellido y Nombre', 'DNI', 'Área', 'Chapas Zinc', 'Tirantes', 'Clavadores', 'Clavos (kg)', 'Cumbreras', 'Fecha'],
-      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.chapa_zinc||0, r.tirantes||0, r.clavadores||0, r.clavos_kg||0, r.cumbreras||0, r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'],
+      head: ['N°', 'Apellido y Nombre', 'DNI', 'Área', 'Materiales', 'Fecha'],
+      row: (r, i) => [i+1, r.caso?.apellido_nombre||'—', r.caso?.dni||'—', r.caso?.areas?.name||'—', r.items || r.resumen || '—', r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'],
     },
   };
 
@@ -1103,7 +1104,7 @@ const StatsDashboard = ({ areas }) => {
 
       // ── Actividad reciente ────────────────────────────────────────────────
 
-      let recentCasesQ = supabase.from('cases_readable').select('*');
+      let recentCasesQ = supabase.from('cases').select('id, person_id, created_at, area_id, motivo, solucion, domicilio, areas!area_id(name), persons!person_id(dni, apellido_nombre)');
       if (filters.from)   recentCasesQ = recentCasesQ.gte('created_at', filters.from);
       if (filters.to)     recentCasesQ = recentCasesQ.lte('created_at', filters.to + 'T23:59:59');
       if (filters.areaId) recentCasesQ = recentCasesQ.eq('area_id', filters.areaId);
@@ -1118,6 +1119,21 @@ const StatsDashboard = ({ areas }) => {
         recentPrestQ.order('created_at', { ascending: false }).limit(8),
       ]);
 
+      // DEBUG TEMPORAL — ver qué devuelve Supabase
+      console.log('[DEBUG recentCases] raw:', recentCases.data?.[0]);
+      console.log('[DEBUG recentCases] error:', recentCases.error);
+
+      // Mapear campos desde los joins a areas y persons
+      const recentCasesData = recentCases.data?.map(c => ({
+        ...c,
+        area_name:       c.areas?.name,
+        dni:             c.persons?.dni,
+        apellido_nombre: c.persons?.apellido_nombre,
+        // domicilio ya viene directamente de cases
+      })) || [];
+
+      console.log('[DEBUG recentCasesData] primer registro:', recentCasesData[0]);
+
       setStats({
         kpis: {
           persons:     persons.count     || 0,
@@ -1129,7 +1145,7 @@ const StatsDashboard = ({ areas }) => {
         byArea,
         byMonth,
         topPrestations,
-        recentCases:       recentCases.data       || [],
+        recentCases:       recentCasesData || [],
         recentPrestations: recentPrestations.data || [],
         byAreaFull,
       });
@@ -1334,8 +1350,7 @@ const StatsDashboard = ({ areas }) => {
                       <th className="text-left px-4 py-3 text-[10px] uppercase tracking-widest text-muted font-black">Módulo</th>
                     </>}
                     {esTecho && <>
-                      <th className="text-left px-4 py-3 text-[10px] uppercase tracking-widest text-muted font-black">Chapas</th>
-                      <th className="text-left px-4 py-3 text-[10px] uppercase tracking-widest text-muted font-black">Tirantes</th>
+                      <th className="text-left px-4 py-3 text-[10px] uppercase tracking-widest text-muted font-black">Materiales</th>
                       <th className="text-left px-4 py-3 text-[10px] uppercase tracking-widest text-muted font-black">Fecha</th>
                     </>}
                     <th className="text-left px-4 py-3 text-[10px] uppercase tracking-widest text-muted font-black">Registrado</th>
@@ -1350,7 +1365,7 @@ const StatsDashboard = ({ areas }) => {
                       <td className="px-4 py-3"><span className="pill text-[9px]">{r.caso?.areas?.name || '—'}</span></td>
                       {esPasajes && <>
                         <td className="px-4 py-3 text-white/80">{r.destino || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-accent">{r.fecha_turno ? new Date(r.fecha_turno).toLocaleDateString('es-AR') : '—'}</td>
+                        <td className="px-4 py-3 font-mono text-accent">{r.fecha_turno ? formatFecha(r.fecha_turno) : '—'}</td>
                         <td className="px-4 py-3 text-white/70">{tipoViajeLbl[r.tipo_viaje] || r.tipo_viaje || '—'}</td>
                         <td className="px-4 py-3 text-center text-white/70">{r.cantidad_acompanantes ?? 0}</td>
                         <td className="px-4 py-3 text-white/60 max-w-[200px] truncate" title={r.motivo_viaje}>{r.motivo_viaje || '—'}</td>
@@ -1367,23 +1382,22 @@ const StatsDashboard = ({ areas }) => {
                       </>}
                       {esModulos && <>
                         <td className="px-4 py-3 text-accent font-bold text-center">{r.cantidad}</td>
-                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'}</td>
+                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'}</td>
                       </>}
                       {esViajes && <>
                         <td className="px-4 py-3 text-white/80">{r.destino || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-accent">{r.fecha ? new Date(r.fecha).toLocaleDateString('es-AR') : '—'}</td>
+                        <td className="px-4 py-3 font-mono text-accent">{r.fecha ? formatFecha(r.fecha) : '—'}</td>
                         <td className="px-4 py-3 font-mono text-white/60">{r.hora_salida_wanda || '—'}</td>
                         <td className="px-4 py-3 font-mono text-white/60">{r.hora_llegada_wanda || '—'}</td>
                       </>}
                       {esFunebre && <>
                         <td className="px-4 py-3 text-white/80">{r.nombre_fallecido} {r.apellido_fallecido}</td>
-                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_fallecimiento ? new Date(r.fecha_fallecimiento).toLocaleDateString('es-AR') : '—'}</td>
+                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_fallecimiento ? formatFecha(r.fecha_fallecimiento) : '—'}</td>
                         <td className="px-4 py-3 text-center">{r.recibio_modulo ? '✓' : '—'}</td>
                       </>}
                       {esTecho && <>
-                        <td className="px-4 py-3 text-accent font-bold text-center">{r.chapa_zinc}</td>
-                        <td className="px-4 py-3 text-white/70 text-center">{r.tirantes}</td>
-                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? new Date(r.fecha_entrega).toLocaleDateString('es-AR') : '—'}</td>
+                        <td className="px-4 py-3 text-white/80 max-w-[300px]" title={r.items || r.resumen}>{r.items || r.resumen || '—'}</td>
+                        <td className="px-4 py-3 font-mono text-white/70">{r.fecha_entrega ? formatFecha(r.fecha_entrega) : '—'}</td>
                       </>}
                       <td className="px-4 py-3 font-mono text-white/30 text-[10px]">{new Date(r.created_at).toLocaleDateString('es-AR')}</td>
                     </tr>

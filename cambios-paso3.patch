@@ -1,0 +1,1484 @@
+diff --git a/index.html b/index.html
+index e949a5b..97d29ed 100644
+--- a/index.html
++++ b/index.html
+@@ -2,12 +2,13 @@
+ <html lang="es">
+   <head>
+     <meta charset="UTF-8" />
+-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>Ficha Social - MVP</title>
++    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
++    <meta name="theme-color" content="#0D0D0D" />
++    <title>Ficha Social</title>
+     </head>
+   <body>
+     <div id="root"></div>
+     <script type="module" src="/src/main.jsx"></script>
+   </body>
+-</html>
++</html>
+diff --git a/src/App.jsx b/src/App.jsx
+index 3e7331e..dd0ec96 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -164,9 +164,10 @@ function App() {
+             activeScreen={activeScreen}
+             onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+             onLogout={handleLogout}
++            unreadCount={unreadCount}
+           />
+ 
+-          <div className="mt-8">
++          <div className="mt-4 md:mt-8">
+             {activeScreen === 'screenDashboard' && (
+               profile?.role === 'operator'
+                 ? (
+diff --git a/src/components/Bandeja/BandejaUI.jsx b/src/components/Bandeja/BandejaUI.jsx
+new file mode 100644
+index 0000000..e95b5d3
+--- /dev/null
++++ b/src/components/Bandeja/BandejaUI.jsx
+@@ -0,0 +1,243 @@
++import { useEffect, useState } from 'react';
++import { PRIORIDAD } from '../../lib/audiencias';
++import { haceCuanto } from '../../lib/fechas';
++
++// Piezas compartidas por la bandeja de Intendencia y la de cada Área.
++// Diseñadas primero para celular: botones de 44px+, texto de 14px+, una columna.
++
++export function Avatar({ name }) {
++  const initials = name
++    ? name.trim().split(/[, ]+/).filter(Boolean).slice(0, 2).reverse().map(w => w[0]).join('').toUpperCase()
++    : '?';
++  return (
++    <div className="w-11 h-11 rounded-xl bg-accent/15 flex items-center justify-center text-accent text-sm font-bold shrink-0">
++      {initials}
++    </div>
++  );
++}
++
++export function PrioridadBadge({ prioridad }) {
++  const p = PRIORIDAD[prioridad] || PRIORIDAD.normal;
++  return (
++    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-semibold ${p.badge}`}>
++      <span aria-hidden>{p.icono}</span>{p.label}
++    </span>
++  );
++}
++
++/** Motivo completo con "Ver más" (en celular no hay hover para leer lo cortado). */
++export function Motivo({ texto }) {
++  const [abierto, setAbierto] = useState(false);
++  if (!texto) return null;
++  const largo = texto.length > 140;
++  return (
++    <div className="text-sm text-white/75 leading-relaxed">
++      <p className={!abierto && largo ? 'line-clamp-3' : ''}>{texto}</p>
++      {largo && (
++        <button
++          type="button"
++          onClick={() => setAbierto(v => !v)}
++          className="p-0! mt-1 bg-transparent! text-accent text-sm font-semibold"
++        >
++          {abierto ? 'Ver menos' : 'Ver más'}
++        </button>
++      )}
++    </div>
++  );
++}
++
++/** Selector de prioridad: <select> nativo, en celular abre la ruedita del sistema. */
++export function SelectorPrioridad({ value, onChange, disabled }) {
++  return (
++    <select
++      aria-label="Prioridad"
++      value={value || 'normal'}
++      onChange={e => onChange(e.target.value)}
++      disabled={disabled}
++      className="tap py-2 text-sm cursor-pointer tracking-normal"
++    >
++      <option value="baja">↓ Baja</option>
++      <option value="normal">→ Normal</option>
++      <option value="alta">↑ Alta</option>
++      <option value="urgente">⚡ Urgente</option>
++    </select>
++  );
++}
++
++/** Encabezado de la tarjeta: persona, DNI, prioridad, área y antigüedad. */
++export function CabeceraAudiencia({ a, etiquetaArea }) {
++  return (
++    <>
++      <div className="flex items-start gap-3">
++        <Avatar name={a.persona?.apellido_nombre} />
++        <div className="min-w-0 flex-1">
++          <p className="text-white font-semibold text-base leading-tight break-words">
++            {a.persona?.apellido_nombre || 'Sin nombre'}
++          </p>
++          <p className="text-muted text-sm font-mono mt-0.5">DNI {a.persona?.dni || '—'}</p>
++        </div>
++        <span className="text-xs text-white/50 whitespace-nowrap pt-0.5" title={new Date(a.created_at).toLocaleString('es-AR')}>
++          {haceCuanto(a.created_at)}
++        </span>
++      </div>
++      <div className="flex items-center gap-2 flex-wrap">
++        <PrioridadBadge prioridad={a.prioridad} />
++        {etiquetaArea && (
++          <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-xs bg-white/5 text-white/70 border-white/15">
++            {etiquetaArea}
++          </span>
++        )}
++      </div>
++    </>
++  );
++}
++
++/**
++ * Hoja inferior en celular (sube desde abajo, al alcance del pulgar)
++ * y ventana centrada en escritorio.
++ */
++export function HojaInferior({ titulo, subtitulo, onClose, children }) {
++  useEffect(() => {
++    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
++    document.addEventListener('keydown', onKey);
++    const overflowPrevio = document.body.style.overflow;
++    document.body.style.overflow = 'hidden'; // que no se desplace la bandeja de fondo
++    return () => {
++      document.removeEventListener('keydown', onKey);
++      document.body.style.overflow = overflowPrevio;
++    };
++  }, [onClose]);
++
++  return (
++    <div
++      className="fixed inset-0 z-[1100] bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center md:p-4"
++      onClick={onClose}
++      role="dialog"
++      aria-modal="true"
++      aria-label={titulo}
++    >
++      <div
++        className="hoja-entrar w-full md:max-w-md bg-panel border border-white/10 rounded-t-3xl md:rounded-2xl max-h-[88vh] overflow-y-auto pb-seguro"
++        onClick={e => e.stopPropagation()}
++      >
++        <div className="md:hidden flex justify-center pt-2.5">
++          <span className="w-10 h-1.5 rounded-full bg-white/20" aria-hidden />
++        </div>
++        <div className="px-5 pt-3 md:pt-5 pb-3 flex items-start justify-between gap-3">
++          <div className="min-w-0">
++            <h3 className="text-white font-semibold text-lg leading-tight">{titulo}</h3>
++            {subtitulo && <p className="text-muted text-sm mt-0.5">{subtitulo}</p>}
++          </div>
++          <button
++            type="button"
++            onClick={onClose}
++            className="tap min-w-[44px] p-0! bg-white/5! text-white text-xl"
++            aria-label="Cerrar"
++          >
++            ×
++          </button>
++        </div>
++        <div className="px-5 pb-2 space-y-4">{children}</div>
++      </div>
++    </div>
++  );
++}
++
++/** Aviso inferior. Con onDeshacer muestra el botón "Deshacer". */
++export function Aviso({ aviso, onCerrar }) {
++  useEffect(() => {
++    if (!aviso) return undefined;
++    const t = setTimeout(onCerrar, aviso.onDeshacer ? 7000 : 4500);
++    return () => clearTimeout(t);
++  }, [aviso, onCerrar]);
++
++  if (!aviso) return null;
++  const esError = aviso.tipo === 'error';
++  return (
++    <div className="fixed left-0 right-0 bottom-0 z-[1200] px-4 pb-seguro pointer-events-none">
++      <div
++        role={esError ? 'alert' : 'status'}
++        className={`fade-in pointer-events-auto mx-auto max-w-md flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl
++          ${esError ? 'bg-red-950 border-red-500/40 text-red-100' : 'bg-[#1f1f1f] border-white/15 text-white'}`}
++      >
++        <p className="flex-1 text-sm">{aviso.mensaje}</p>
++        {aviso.onDeshacer && (
++          <button
++            type="button"
++            onClick={() => { aviso.onDeshacer(); onCerrar(); }}
++            className="tap px-3! py-1! bg-transparent! text-accent font-bold text-sm uppercase tracking-wide"
++          >
++            Deshacer
++          </button>
++        )}
++      </div>
++    </div>
++  );
++}
++
++/** Encabezado de la bandeja con contadores y botón actualizar. */
++export function EncabezadoBandeja({ titulo, subtitulo, total, urgentes, loading, onActualizar }) {
++  return (
++    <div className="space-y-3">
++      <div className="flex items-start justify-between gap-3">
++        <div className="min-w-0">
++          {/* En celular el título ya está en la barra superior: no se repite */}
++          <h2 className="hidden md:block text-xl font-semibold text-white leading-tight">{titulo}</h2>
++          <p className="text-sm text-muted md:mt-1">{subtitulo}</p>
++        </div>
++        <button
++          type="button"
++          className="secondary tap shrink-0 px-3! text-sm"
++          onClick={onActualizar}
++          disabled={loading}
++          aria-label="Actualizar bandeja"
++        >
++          <span className={loading ? 'animate-spin inline-block' : 'inline-block'} aria-hidden>⟳</span>
++          <span className="hidden sm:inline">{loading ? 'Actualizando…' : 'Actualizar'}</span>
++        </button>
++      </div>
++      <div className="flex items-center gap-2 flex-wrap">
++        <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/80 text-sm">
++          {total} pendiente{total === 1 ? '' : 's'}
++        </span>
++        {urgentes > 0 && (
++          <span className="px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-sm font-semibold">
++            ⚡ {urgentes} urgente{urgentes > 1 ? 's' : ''}
++          </span>
++        )}
++      </div>
++    </div>
++  );
++}
++
++export function BandejaVacia({ titulo, detalle }) {
++  return (
++    <div className="card text-center py-16">
++      <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mx-auto mb-4 text-teal-400 text-2xl">
++        ✓
++      </div>
++      <p className="text-white font-medium">{titulo}</p>
++      <p className="text-muted text-sm mt-1">{detalle}</p>
++    </div>
++  );
++}
++
++export function ErrorConexion({ mensaje, onReintentar }) {
++  if (!mensaje) return null;
++  return (
++    <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
++      <span className="flex-1">{mensaje}</span>
++      <button type="button" onClick={onReintentar} className="secondary tap px-3! text-sm">Reintentar</button>
++    </div>
++  );
++}
++
++/** Error dentro de la hoja, encima del botón (el aviso inferior lo taparía). */
++export function ErrorEnHoja({ mensaje }) {
++  if (!mensaje) return null;
++  return (
++    <p role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
++      {mensaje}
++    </p>
++  );
++}
+diff --git a/src/components/DashboardArea.jsx b/src/components/DashboardArea.jsx
+index 796940f..3ea5424 100644
+--- a/src/components/DashboardArea.jsx
++++ b/src/components/DashboardArea.jsx
+@@ -1,266 +1,230 @@
+ import { useCallback, useEffect, useState } from 'react';
+ import { supabase } from '../lib/supabase';
+-
+-const PRIORIDAD = {
+-  urgente: { label: 'Urgente', badge: 'bg-red-500/12 text-red-400 border-red-500/25',    border: 'border-l-red-500/60',    card: 'border-red-500/20 bg-red-500/4' },
+-  alta:    { label: 'Alta',    badge: 'bg-amber-500/12 text-amber-400 border-amber-500/25', border: 'border-l-amber-500/60', card: 'border-amber-500/15' },
+-  normal:  { label: 'Normal',  badge: 'bg-accent2/12 text-accent border-accent/25',       border: 'border-l-accent2/40',   card: '' },
+-  baja:    { label: 'Baja',    badge: 'bg-white/8 text-white/30 border-white/10',         border: 'border-l-white/10',     card: 'opacity-80' },
+-};
+-
+-function Avatar({ name }) {
+-  const initials = name ? name.trim().split(/[, ]+/).slice(0, 2).reverse().map(w => w[0]).join('').toUpperCase() : '?';
+-  return (
+-    <div className="w-9 h-9 rounded-xl bg-accent2/15 flex items-center justify-center text-accent text-xs font-bold shrink-0">
+-      {initials}
+-    </div>
+-  );
+-}
+-
+-function AtenderModal({ audiencia, onConfirm, onClose }) {
+-  const [observacion, setObservacion] = useState('');
+-  const [prestacion, setPrestacion] = useState('');
+-  const [loading, setLoading] = useState(false);
+-
+-  const handleConfirm = async () => {
+-    setLoading(true);
+-    await onConfirm({ observacion, prestacion });
+-    setLoading(false);
+-  };
+-
+-  return (
+-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+-      <div className="card w-full max-w-md border border-white/10 rounded-2xl">
+-        <div className="mb-5">
+-          <h3 className="text-white font-semibold text-sm mb-1">Marcar como atendida</h3>
+-          <p className="text-muted text-xs">{audiencia.persona?.apellido_nombre} — DNI {audiencia.persona?.dni}</p>
+-        </div>
+-        <div className="space-y-4">
+-          <div>
+-            <label>Prestación otorgada (opcional)</label>
+-            <input
+-              type="text"
+-              value={prestacion}
+-              onChange={e => setPrestacion(e.target.value)}
+-              placeholder="Ej: Módulos alimenticios, ayuda económica..."
+-            />
+-          </div>
+-          <div>
+-            <label>Observaciones</label>
+-            <textarea
+-              value={observacion}
+-              onChange={e => setObservacion(e.target.value)}
+-              placeholder="Descripción de la atención brindada..."
+-              rows={3}
+-              className="resize-none"
+-            />
+-          </div>
+-        </div>
+-        <div className="flex gap-3 mt-5">
+-          <button onClick={onClose} className="secondary flex-1 py-2.5 text-sm">Cancelar</button>
+-          <button onClick={handleConfirm} disabled={loading} className="primary flex-1 py-2.5 text-sm disabled:opacity-50">
+-            {loading ? 'Guardando...' : '✓ Confirmar'}
+-          </button>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
++import { useAudiencias, actualizarAudiencia, fotoAudiencia, ordenarPorPrioridad, PRIORIDAD } from '../lib/audiencias';
++import {
++  CabeceraAudiencia, Motivo, SelectorPrioridad, HojaInferior, Aviso,
++  EncabezadoBandeja, BandejaVacia, ErrorConexion, ErrorEnHoja,
++} from './Bandeja/BandejaUI';
+ 
+ export default function DashboardArea({ profile, onViewPerson }) {
+-  const [audiencias, setAudiencias] = useState([]);
+-  const [loading, setLoading] = useState(true);
++  const areaId = profile?.areas?.id ?? null;
++  const areaNombre = profile?.areas?.name || 'Mi área';
++
++  const { audiencias, setAudiencias, loading, error, recargar } = useAudiencias({
++    estado: 'DERIVADO',
++    areaId,
++    habilitado: !!areaId,
++    canal: `audiencias-area-${areaId}`,
++  });
+   const [areas, setAreas] = useState([]);
+-  const [derivandoId, setDerivandoId] = useState(null);
+-  const [atendiendo, setAtendiendo] = useState(null);
+-
+-  const areaId = profile?.areas?.id;
+-  const areaNombre = profile?.areas?.name || 'Mi Área';
+-
+-  const fetchAudiencias = useCallback(async () => {
+-    if (!areaId) { setLoading(false); return; }
+-    setLoading(true);
+-    const { data, error } = await supabase
+-      .from('audiencias')
+-      .select(`id, person_id, motivo, estado, prioridad, area_id, created_at,
+-        persona:persons!person_id(id, apellido_nombre, dni),
+-        area:areas!area_id(id, name)`)
+-      .eq('estado', 'DERIVADO')
+-      .eq('area_id', areaId)
+-      .order('created_at', { ascending: true });
+-
+-    if (!error) {
+-      const orden = { urgente: 0, alta: 1, normal: 2, baja: 3 };
+-      setAudiencias((data || []).sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2)));
+-    }
+-    setLoading(false);
+-  }, [areaId]);
++  const [accion, setAccion] = useState(null); // { audiencia, tipo: 'atender' | 'derivar' }
++  const [prestacion, setPrestacion] = useState('');
++  const [observacion, setObservacion] = useState('');
++  const [areaDestino, setAreaDestino] = useState('');
++  const [guardando, setGuardando] = useState(false);
++  const [errorHoja, setErrorHoja] = useState('');
++  const [aviso, setAviso] = useState(null);
++  const cerrarAviso = useCallback(() => setAviso(null), []);
+ 
+   useEffect(() => {
+-    fetchAudiencias();
+-    supabase.from('areas').select('id, name').then(({ data }) => setAreas(data || []));
+-    const channel = supabase
+-      .channel(`area-${areaId}-realtime`)
+-      .on('postgres_changes', { event: '*', schema: 'public', table: 'audiencias' }, fetchAudiencias)
+-      .subscribe();
+-    return () => supabase.removeChannel(channel);
+-  }, [fetchAudiencias, areaId]);
+-
+-  const handleAtender = async ({ observacion, prestacion }) => {
+-    if (!atendiendo) return;
+-    const obs = [prestacion ? `Prestación: ${prestacion}` : null, observacion || null].filter(Boolean).join('\n') || null;
+-    await supabase.from('audiencias').update({ estado: 'ATENDIDO', observaciones_area: obs }).eq('id', atendiendo.id);
+-    setAudiencias(prev => prev.filter(a => a.id !== atendiendo.id));
+-    setAtendiendo(null);
++    supabase.from('areas').select('id, name').eq('active', true).order('name')
++      .then(({ data }) => setAreas(data || []));
++  }, []);
++
++  const abrir = (audiencia, tipo) => {
++    setAccion({ audiencia, tipo });
++    setPrestacion('');
++    setObservacion('');
++    setAreaDestino('');
++    setErrorHoja('');
+   };
++  const cerrar = useCallback(() => { if (!guardando) setAccion(null); }, [guardando]);
++
++  const confirmar = async () => {
++    const { audiencia, tipo } = accion;
++    if (tipo === 'derivar' && !areaDestino) return;
++    const antes = fotoAudiencia(audiencia);
++
++    let cambios;
++    if (tipo === 'atender') {
++      const obs = [prestacion.trim() ? `Prestación: ${prestacion.trim()}` : null, observacion.trim() || null]
++        .filter(Boolean).join('\n') || null;
++      cambios = { estado: 'ATENDIDO', observaciones_area: obs };
++    } else {
++      cambios = { estado: 'DERIVADO', area_id: areaDestino };
++    }
+ 
+-  const handleDerivar = async (id, areaDestinoId) => {
+-    await supabase.from('audiencias').update({ estado: 'DERIVADO', area_id: areaDestinoId }).eq('id', id);
+-    setAudiencias(prev => prev.filter(a => a.id !== id));
+-    setDerivandoId(null);
+-  };
++    setGuardando(true);
++    const { error: err } = await actualizarAudiencia(audiencia.id, cambios);
++    setGuardando(false);
++    if (err) {
++      setErrorHoja(err.message);
++      return;
++    }
+ 
+-  const handleChangePrioridad = async (id, val) => {
+-    await supabase.from('audiencias').update({ prioridad: val }).eq('id', id);
+-    setAudiencias(prev => {
+-      const orden = { urgente: 0, alta: 1, normal: 2, baja: 3 };
+-      return prev.map(a => a.id === id ? { ...a, prioridad: val } : a)
+-        .sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2));
++    setAudiencias(prev => prev.filter(x => x.id !== audiencia.id));
++    setAccion(null);
++    const destino = tipo === 'derivar' ? areas.find(ar => ar.id === areaDestino)?.name : null;
++    setAviso({
++      mensaje: tipo === 'atender'
++        ? `Atendida: ${audiencia.persona?.apellido_nombre || ''}`
++        : `Derivada a ${destino}: ${audiencia.persona?.apellido_nombre || ''}`,
++      onDeshacer: async () => {
++        const { error: e2 } = await actualizarAudiencia(audiencia.id, antes);
++        if (e2) { setAviso({ tipo: 'error', mensaje: 'No se pudo deshacer: ' + e2.message }); return; }
++        setAudiencias(prev => ordenarPorPrioridad([...prev.filter(x => x.id !== audiencia.id), audiencia]));
++      },
+     });
+   };
+ 
++  const cambiarPrioridad = async (a, prioridad) => {
++    const previa = a.prioridad;
++    setAudiencias(prev => ordenarPorPrioridad(prev.map(x => x.id === a.id ? { ...x, prioridad } : x)));
++    const { error: err } = await actualizarAudiencia(a.id, { prioridad });
++    if (err) {
++      setAudiencias(prev => ordenarPorPrioridad(prev.map(x => x.id === a.id ? { ...x, prioridad: previa } : x)));
++      setAviso({ tipo: 'error', mensaje: err.message });
++    }
++  };
++
+   const urgentes = audiencias.filter(a => a.prioridad === 'urgente').length;
+ 
++  if (!areaId) {
++    return (
++      <div className="card text-center py-16">
++        <p className="text-white font-medium">Sin área asignada</p>
++        <p className="text-muted text-sm mt-1">Contactá al administrador del sistema</p>
++      </div>
++    );
++  }
++
+   return (
+-    <>
+-      {atendiendo && <AtenderModal audiencia={atendiendo} onConfirm={handleAtender} onClose={() => setAtendiendo(null)} />}
++    <section className="space-y-4 md:space-y-6 fade-in pb-24">
++      <EncabezadoBandeja
++        titulo={`Bandeja — ${areaNombre}`}
++        subtitulo={`Derivaciones recibidas · ${areaNombre}`}
++        total={audiencias.length}
++        urgentes={urgentes}
++        loading={loading}
++        onActualizar={() => recargar()}
++      />
++
++      <ErrorConexion mensaje={error} onReintentar={() => recargar()} />
++
++      {loading && audiencias.length === 0 ? (
++        <div className="text-center py-16 text-muted text-sm">Cargando derivaciones…</div>
++      ) : audiencias.length === 0 ? (
++        <BandejaVacia titulo="Sin derivaciones pendientes" detalle={`La bandeja de ${areaNombre} está al día`} />
++      ) : (
++        <div className="grid gap-3 lg:grid-cols-2">
++          {audiencias.map(a => {
++            const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
++            const personaId = a.persona?.id || a.person_id;
++            return (
++              <article key={a.id} className={`card p-4! md:p-5! border-l-4 space-y-3 ${prio.borde} ${prio.card}`}>
++                <CabeceraAudiencia a={a} />
++                <Motivo texto={a.motivo} />
++                {a.respuesta && (
++                  <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
++                    <p className="text-xs text-muted mb-0.5">Indicación de Intendencia</p>
++                    <p className="text-sm text-white/80">{a.respuesta}</p>
++                  </div>
++                )}
++
++                <div className="grid grid-cols-[1fr_auto] gap-2">
++                  <SelectorPrioridad value={a.prioridad} onChange={v => cambiarPrioridad(a, v)} />
++                  <button
++                    type="button"
++                    className="secondary tap px-4! text-sm"
++                    onClick={() => onViewPerson?.(personaId, 'screenDashboardArea')}
++                    disabled={!personaId}
++                  >
++                    Ver ficha
++                  </button>
++                </div>
+ 
+-      <section className="space-y-6 fade-in">
+-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+-          <div>
+-            <h2 className="text-xl font-semibold text-white">Bandeja — {areaNombre}</h2>
+-            <p className="text-xs text-muted mt-1">Derivaciones recibidas</p>
+-          </div>
+-          <div className="flex items-center gap-2">
+-            {urgentes > 0 && (
+-              <span className="px-3 py-1.5 rounded-lg bg-red-500/12 border border-red-500/25 text-red-400 text-xs font-medium animate-pulse">
+-                ⚡ {urgentes} urgente{urgentes > 1 ? 's' : ''}
+-              </span>
+-            )}
+-            <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/8 text-white/60 text-xs">
+-              {audiencias.length} pendientes
+-            </span>
+-            <button className="secondary py-2 px-4 text-xs" onClick={fetchAudiencias} disabled={loading}>
+-              {loading ? 'Actualizando...' : 'Actualizar'}
+-            </button>
+-          </div>
++                <div className="grid grid-cols-[2fr_1fr] gap-2">
++                  <button type="button" className="primary tap text-base font-semibold" onClick={() => abrir(a, 'atender')}>
++                    ✓ Atender
++                  </button>
++                  <button
++                    type="button"
++                    onClick={() => abrir(a, 'derivar')}
++                    className="tap px-2! text-sm font-semibold rounded-xl border bg-amber-500/10 border-amber-500/30 text-amber-300"
++                  >
++                    → Derivar
++                  </button>
++                </div>
++              </article>
++            );
++          })}
+         </div>
++      )}
++
++      {accion && (
++        <HojaInferior
++          titulo={accion.tipo === 'atender' ? 'Marcar como atendida' : 'Derivar a otra área'}
++          subtitulo={`${accion.audiencia.persona?.apellido_nombre || ''} · DNI ${accion.audiencia.persona?.dni || '—'}`}
++          onClose={cerrar}
++        >
++          {accion.tipo === 'atender' ? (
++            <>
++              <div>
++                <label htmlFor="area-prestacion">Prestación otorgada (opcional)</label>
++                <input
++                  id="area-prestacion"
++                  value={prestacion}
++                  onChange={e => setPrestacion(e.target.value)}
++                  placeholder="Ej: módulo alimenticio, pasaje…"
++                />
++              </div>
++              <div>
++                <label htmlFor="area-observacion">Observaciones</label>
++                <textarea
++                  id="area-observacion"
++                  rows={3}
++                  value={observacion}
++                  onChange={e => setObservacion(e.target.value)}
++                  placeholder="Qué se hizo con esta persona…"
++                  className="resize-none"
++                />
++              </div>
++            </>
++          ) : (
++            <fieldset className="space-y-2">
++              <legend className="text-sm text-muted mb-2">¿A qué área?</legend>
++              {areas.filter(ar => ar.id !== areaId).map(ar => (
++                <button
++                  key={ar.id}
++                  type="button"
++                  onClick={() => setAreaDestino(ar.id)}
++                  aria-pressed={areaDestino === ar.id}
++                  className={`tap w-full justify-start! text-left px-4! text-base rounded-xl border transition-colors
++                    ${areaDestino === ar.id ? 'bg-accent/20 border-accent text-white' : 'bg-white/5 border-white/10 text-white/80'}`}
++                >
++                  <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${areaDestino === ar.id ? 'border-accent bg-accent' : 'border-white/40'}`} aria-hidden />
++                  {ar.name}
++                </button>
++              ))}
++            </fieldset>
++          )}
++
++          <ErrorEnHoja mensaje={errorHoja} />
++
++          <button
++            type="button"
++            onClick={confirmar}
++            disabled={guardando || (accion.tipo === 'derivar' && !areaDestino)}
++            className="primary tap w-full text-base disabled:opacity-40"
++          >
++            {guardando ? 'Guardando…'
++              : accion.tipo === 'atender' ? 'Confirmar atención'
++              : areaDestino ? `Derivar a ${areas.find(ar => ar.id === areaDestino)?.name || ''}` : 'Elegí un área'}
++          </button>
++        </HojaInferior>
++      )}
+ 
+-        {loading ? (
+-          <div className="text-center py-20 text-muted text-xs opacity-50">Cargando derivaciones...</div>
+-        ) : !areaId ? (
+-          <div className="card text-center py-20">
+-            <p className="text-white font-medium text-sm">Sin área asignada</p>
+-            <p className="text-muted text-xs mt-1">Contactá al administrador del sistema</p>
+-          </div>
+-        ) : audiencias.length === 0 ? (
+-          <div className="card text-center py-20">
+-            <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mx-auto mb-4">
+-              <svg className="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+-              </svg>
+-            </div>
+-            <p className="text-white font-medium text-sm">Sin derivaciones pendientes</p>
+-            <p className="text-muted text-xs mt-1">La bandeja de {areaNombre} está al día</p>
+-          </div>
+-        ) : (
+-          <div className="grid gap-3">
+-            {audiencias.map((a) => {
+-              const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
+-              const fechaHora = new Date(a.created_at);
+-              const isDerivando = derivandoId === a.id;
+-
+-              return (
+-                <div key={a.id} className={`card border-l-2 py-4 px-5 transition-all duration-200 ${prio.border} ${prio.card}`}>
+-                  <div className="flex flex-col md:flex-row md:items-start gap-4">
+-
+-                    <div className="flex-1 min-w-0">
+-                      <div className="flex items-center gap-3 mb-3">
+-                        <Avatar name={a.persona?.apellido_nombre} />
+-                        <div className="min-w-0">
+-                          <p className="text-white font-medium text-sm truncate">{a.persona?.apellido_nombre || 'Sin nombre'}</p>
+-                          <p className="text-muted text-xs font-mono">DNI {a.persona?.dni || '-'}</p>
+-                        </div>
+-                      </div>
+-                      <div className="flex items-center gap-2 flex-wrap mb-2">
+-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-medium ${prio.badge}`}>{prio.label}</span>
+-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">
+-                          Desde: {a.area?.name || '?'}
+-                        </span>
+-                        <span className="text-[10px] text-white/25 font-mono">
+-                          {fechaHora.toLocaleDateString()} {fechaHora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+-                        </span>
+-                      </div>
+-                      {a.motivo && <p className="text-white/40 text-xs leading-relaxed line-clamp-2">{a.motivo}</p>}
+-                    </div>
+-
+-                    <div className="flex flex-col gap-2 w-full md:w-48 shrink-0">
+-                      <select
+-                        value={a.prioridad || 'normal'}
+-                        onChange={e => handleChangePrioridad(a.id, e.target.value)}
+-                        className="py-2 text-xs cursor-pointer"
+-                      >
+-                        <option value="baja">↓ Baja</option>
+-                        <option value="normal">→ Normal</option>
+-                        <option value="alta">↑ Alta</option>
+-                        <option value="urgente">⚡ Urgente</option>
+-                      </select>
+-
+-                      {isDerivando ? (
+-                        <div className="flex flex-col gap-1.5">
+-                          <p className="text-[10px] text-muted px-1 mb-0.5">Re-derivar a:</p>
+-                          {areas.filter(ar => ar.id !== areaId).map(ar => (
+-                            <button
+-                              key={ar.id}
+-                              onClick={() => handleDerivar(a.id, ar.id)}
+-                              className="w-full text-left px-3 py-2 rounded-lg bg-white/4 border border-white/8 text-xs text-white/60 hover:bg-accent2/10 hover:text-accent hover:border-accent/20 transition-all"
+-                            >
+-                              → {ar.name}
+-                            </button>
+-                          ))}
+-                          <button onClick={() => setDerivandoId(null)} className="w-full px-3 py-2 rounded-lg text-xs text-muted hover:text-white transition-colors">
+-                            Cancelar
+-                          </button>
+-                        </div>
+-                      ) : (
+-                        <div className="flex gap-2">
+-                          <button
+-                            className="secondary flex-1 py-2 text-xs"
+-                            onClick={() => onViewPerson?.(a.persona?.id || a.person_id, 'screenDashboardArea')}
+-                            disabled={!a.persona?.id && !a.person_id}
+-                          >
+-                            Ver ficha
+-                          </button>
+-                          <button
+-                            className="flex-1 py-2 text-xs rounded-xl border border-amber-500/25 bg-amber-500/8 text-amber-400 hover:bg-amber-500/15 transition-all"
+-                            onClick={() => setDerivandoId(a.id)}
+-                          >
+-                            Re-derivar
+-                          </button>
+-                        </div>
+-                      )}
+-
+-                      <button className="primary w-full py-2 text-xs" onClick={() => setAtendiendo(a)}>
+-                        ✓ Atender
+-                      </button>
+-                    </div>
+-                  </div>
+-                </div>
+-              );
+-            })}
+-          </div>
+-        )}
+-      </section>
+-    </>
++      <Aviso aviso={aviso} onCerrar={cerrarAviso} />
++    </section>
+   );
+ }
+diff --git a/src/components/DashboardIntendencia.jsx b/src/components/DashboardIntendencia.jsx
+index 7f9b99c..ce5998d 100644
+--- a/src/components/DashboardIntendencia.jsx
++++ b/src/components/DashboardIntendencia.jsx
+@@ -1,293 +1,212 @@
+ import { useCallback, useEffect, useState } from 'react';
+ import { supabase } from '../lib/supabase';
+-
+-const PRIORIDAD = {
+-  urgente: { label: 'Urgente', badge: 'bg-red-500/12 text-red-400 border-red-500/25',   border: 'border-l-red-500/60',    card: 'border-red-500/20 bg-red-500/4' },
+-  alta:    { label: 'Alta',    badge: 'bg-amber-500/12 text-amber-400 border-amber-500/25', border: 'border-l-amber-500/60', card: 'border-amber-500/15' },
+-  normal:  { label: 'Normal',  badge: 'bg-accent2/12 text-accent border-accent/25',      border: 'border-l-accent2/40',    card: '' },
+-  baja:    { label: 'Baja',    badge: 'bg-white/8 text-white/30 border-white/10',        border: 'border-l-white/10',      card: 'opacity-80' },
++import { useAudiencias, actualizarAudiencia, fotoAudiencia, ordenarPorPrioridad, PRIORIDAD } from '../lib/audiencias';
++import {
++  CabeceraAudiencia, Motivo, SelectorPrioridad, HojaInferior, Aviso,
++  EncabezadoBandeja, BandejaVacia, ErrorConexion, ErrorEnHoja,
++} from './Bandeja/BandejaUI';
++
++const RESPUESTAS = {
++  atendido:    { estado: 'ATENDIDO',    boton: '✓ Se atiende',    titulo: 'Se atiende',          ok: 'Marcada como "se atiende"',    cls: 'bg-teal-500/15 border-teal-500/30 text-teal-300' },
++  no_atendido: { estado: 'NO_ATENDIDO', boton: '✗ No se atiende', titulo: 'No se atiende',       ok: 'Marcada como "no se atiende"', cls: 'bg-red-500/10 border-red-500/30 text-red-300' },
++  derivado:    { estado: 'DERIVADO',    boton: '→ Derivar',       titulo: 'Derivar a otra área', ok: 'Derivada',                     cls: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
+ };
+ 
+-function Avatar({ name }) {
+-  const initials = name ? name.trim().split(/[, ]+/).slice(0, 2).reverse().map(w => w[0]).join('').toUpperCase() : '?';
+-  return (
+-    <div className="w-9 h-9 rounded-xl bg-accent2/15 flex items-center justify-center text-accent text-xs font-bold shrink-0">
+-      {initials}
+-    </div>
+-  );
+-}
+-
+ export default function DashboardIntendencia({ profile, onViewPerson }) {
+-  const [audiencias, setAudiencias] = useState([]);
+-  const [loading, setLoading] = useState(true);
+-  const [derivandoId, setDerivandoId] = useState(null);
+-  const [respondiendo, setRespondiendo] = useState(null);
+-  // { id, tipo: 'atendido' | 'no_atendido' | 'derivado' }
+-  const [respuestaTexto, setRespuestaTexto] = useState('');
++  const { audiencias, setAudiencias, loading, error, recargar } = useAudiencias({
++    estado: 'PENDIENTE',
++    habilitado: !!profile,
++    canal: 'audiencias-intendencia',
++  });
+   const [areas, setAreas] = useState([]);
+-
+-  const fetchAudiencias = useCallback(async () => {
+-    if (!profile) return;
+-    setLoading(true);
+-    const { data, error } = await supabase
+-      .from('audiencias')
+-      .select(`id, person_id, motivo, estado, prioridad, area_id, created_at,
+-        persona:persons!person_id(id, apellido_nombre, dni),
+-        area:areas!area_id(id, name)`)
+-      .eq('estado', 'PENDIENTE')
+-      .order('created_at', { ascending: true });
+-
+-    if (!error) {
+-      const orden = { urgente: 0, alta: 1, normal: 2, baja: 3 };
+-      const rows = (data || []).sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2));
+-      setAudiencias(rows);
+-    }
+-    setLoading(false);
+-  }, [profile]);
+-
+-  useEffect(() => {
+-    fetchAudiencias();
+-    const channel = supabase
+-      .channel('audiencias-realtime-int')
+-      .on('postgres_changes', { event: '*', schema: 'public', table: 'audiencias' }, fetchAudiencias)
+-      .subscribe();
+-    return () => supabase.removeChannel(channel);
+-  }, [fetchAudiencias]);
++  const [respondiendo, setRespondiendo] = useState(null); // { audiencia, tipo }
++  const [texto, setTexto] = useState('');
++  const [areaDestino, setAreaDestino] = useState('');
++  const [guardando, setGuardando] = useState(false);
++  const [errorHoja, setErrorHoja] = useState('');
++  const [aviso, setAviso] = useState(null);
++  const cerrarAviso = useCallback(() => setAviso(null), []);
+ 
+   useEffect(() => {
+-    supabase.from('areas').select('id, name').then(({ data }) => setAreas(data || []));
++    supabase.from('areas').select('id, name').eq('active', true).order('name')
++      .then(({ data }) => setAreas((data || []).filter(ar => {
++        const n = ar.name?.trim().toLowerCase();
++        return n !== 'mesa de entrada' && n !== 'intendencia';
++      })));
+   }, []);
+ 
+-  const handleResponder = async (id, tipo, areaDestinoId = null) => {
+-    const updateData = {
+-      respuesta: respuestaTexto || null,
++  const abrir = (audiencia, tipo) => {
++    setRespondiendo({ audiencia, tipo });
++    setTexto('');
++    setAreaDestino('');
++    setErrorHoja('');
++  };
++  const cerrar = useCallback(() => { if (!guardando) setRespondiendo(null); }, [guardando]);
++
++  const confirmar = async () => {
++    const { audiencia, tipo } = respondiendo;
++    if (tipo === 'derivado' && !areaDestino) return;
++    const antes = fotoAudiencia(audiencia);
++    const cambios = {
++      estado: RESPUESTAS[tipo].estado,
+       tipo_respuesta: tipo,
++      respuesta: texto.trim() || null,
+       respondido_at: new Date().toISOString(),
+-      estado: tipo === 'derivado' ? 'DERIVADO' : tipo === 'atendido' ? 'ATENDIDO' : 'NO_ATENDIDO',
++      respondido_por: profile?.user_id ?? null,
++      ...(tipo === 'derivado' ? { area_id: areaDestino } : {}),
+     };
+-    if (tipo === 'derivado' && areaDestinoId) {
+-      updateData.area_id = areaDestinoId;
++
++    setGuardando(true);
++    const { error: err } = await actualizarAudiencia(audiencia.id, cambios);
++    setGuardando(false);
++
++    if (err) {
++      // La tarjeta NO se quita (antes desaparecía aunque no se hubiera guardado).
++      // El error se muestra dentro de la hoja, junto al botón para reintentar.
++      setErrorHoja(err.message);
++      return;
+     }
+-    await supabase.from('audiencias').update(updateData).eq('id', id);
+-    setAudiencias(prev => prev.filter(a => a.id !== id));
++
++    setAudiencias(prev => prev.filter(x => x.id !== audiencia.id));
+     setRespondiendo(null);
+-    setRespuestaTexto('');
+-    setDerivandoId(null);
++    const nombreArea = tipo === 'derivado' ? areas.find(ar => ar.id === areaDestino)?.name : null;
++    setAviso({
++      mensaje: `${RESPUESTAS[tipo].ok}${nombreArea ? ` a ${nombreArea}` : ''}: ${audiencia.persona?.apellido_nombre || ''}`,
++      onDeshacer: async () => {
++        const { error: e2 } = await actualizarAudiencia(audiencia.id, antes);
++        if (e2) { setAviso({ tipo: 'error', mensaje: 'No se pudo deshacer: ' + e2.message }); return; }
++        setAudiencias(prev => ordenarPorPrioridad([...prev.filter(x => x.id !== audiencia.id), audiencia]));
++      },
++    });
+   };
+ 
+-  const handleChangePrioridad = async (id, val) => {
+-    await supabase.from('audiencias').update({ prioridad: val }).eq('id', id);
+-    setAudiencias(prev => {
+-      const orden = { urgente: 0, alta: 1, normal: 2, baja: 3 };
+-      return prev.map(a => a.id === id ? { ...a, prioridad: val } : a)
+-        .sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2));
+-    });
++  const cambiarPrioridad = async (a, prioridad) => {
++    const previa = a.prioridad;
++    setAudiencias(prev => ordenarPorPrioridad(prev.map(x => x.id === a.id ? { ...x, prioridad } : x)));
++    const { error: err } = await actualizarAudiencia(a.id, { prioridad });
++    if (err) {
++      setAudiencias(prev => ordenarPorPrioridad(prev.map(x => x.id === a.id ? { ...x, prioridad: previa } : x)));
++      setAviso({ tipo: 'error', mensaje: err.message });
++    }
+   };
+ 
+   const urgentes = audiencias.filter(a => a.prioridad === 'urgente').length;
++  const r = respondiendo && RESPUESTAS[respondiendo.tipo];
+ 
+   return (
+-    <section className="space-y-6 fade-in">
+-
+-      {/* Header */}
+-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+-        <div>
+-          <h2 className="text-xl font-semibold text-white">Personas para atención</h2>
+-          <p className="text-xs text-muted mt-1">Bandeja de audiencias pendientes</p>
+-        </div>
+-        <div className="flex items-center gap-2">
+-          {urgentes > 0 && (
+-            <span className="px-3 py-1.5 rounded-lg bg-red-500/12 border border-red-500/25 text-red-400 text-xs font-medium animate-pulse">
+-              ⚡ {urgentes} urgente{urgentes > 1 ? 's' : ''}
+-            </span>
+-          )}
+-          <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/8 text-white/60 text-xs">
+-            {audiencias.length} pendientes
+-          </span>
+-          <button className="secondary py-2 px-4 text-xs" onClick={fetchAudiencias} disabled={loading}>
+-            {loading ? 'Actualizando...' : 'Actualizar'}
+-          </button>
+-        </div>
+-      </div>
+-
+-      {/* Cards */}
+-      {loading ? (
+-        <div className="text-center py-20 text-muted text-xs opacity-50">Cargando audiencias...</div>
++    <section className="space-y-4 md:space-y-6 fade-in pb-24">
++      <EncabezadoBandeja
++        titulo="Personas para atención"
++        subtitulo="Audiencias pendientes"
++        total={audiencias.length}
++        urgentes={urgentes}
++        loading={loading}
++        onActualizar={() => recargar()}
++      />
++
++      <ErrorConexion mensaje={error} onReintentar={() => recargar()} />
++
++      {loading && audiencias.length === 0 ? (
++        <div className="text-center py-16 text-muted text-sm">Cargando audiencias…</div>
+       ) : audiencias.length === 0 ? (
+-        <div className="card text-center py-20">
+-          <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mx-auto mb-4">
+-            <svg className="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
+-            </svg>
+-          </div>
+-          <p className="text-white font-medium text-sm">Sin audiencias pendientes</p>
+-          <p className="text-muted text-xs mt-1">La bandeja está al día</p>
+-        </div>
++        <BandejaVacia titulo="Sin audiencias pendientes" detalle="La bandeja está al día" />
+       ) : (
+-        <div className="grid gap-3">
+-          {audiencias.map((a) => {
++        <div className="grid gap-3 lg:grid-cols-2">
++          {audiencias.map(a => {
+             const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
+-            const fechaHora = new Date(a.created_at);
+-
++            const personaId = a.persona?.id || a.person_id;
+             return (
+-              <div
+-                key={a.id}
+-                className={`card border-l-2 py-4 px-5 transition-all duration-200 ${prio.border} ${prio.card}`}
+-              >
+-                <div className="flex flex-col md:flex-row md:items-start gap-4">
+-
+-                  {/* Info */}
+-                  <div className="flex-1 min-w-0">
+-                    <div className="flex items-center gap-3 mb-3">
+-                      <Avatar name={a.persona?.apellido_nombre} />
+-                      <div className="min-w-0">
+-                        <p className="text-white font-medium text-sm truncate">
+-                          {a.persona?.apellido_nombre || 'Sin nombre'}
+-                        </p>
+-                        <p className="text-muted text-xs font-mono">DNI {a.persona?.dni || '-'}</p>
+-                      </div>
+-                    </div>
+-
+-                    <div className="flex items-center gap-2 flex-wrap mb-2">
+-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-medium ${prio.badge}`}>
+-                        {prio.label}
+-                      </span>
+-                      <span className="pill text-[10px]">{a.area?.name || 'Sin área'}</span>
+-                      <span className="text-[10px] text-white/25 font-mono">
+-                        {fechaHora.toLocaleDateString()} {fechaHora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+-                      </span>
+-                    </div>
+-
+-                    {a.motivo && (
+-                      <p className="text-white/40 text-xs leading-relaxed line-clamp-2">{a.motivo}</p>
+-                    )}
+-                  </div>
+-
+-                  {/* Acciones */}
+-                  <div className="flex flex-col gap-2 w-full md:w-52 shrink-0">
+-
+-                    {/* Select de prioridad — sin cambios */}
+-                    <select
+-                      value={a.prioridad || 'normal'}
+-                      onChange={e => handleChangePrioridad(a.id, e.target.value)}
+-                      className="py-2 text-xs cursor-pointer"
+-                    >
+-                      <option value="baja">↓ Baja</option>
+-                      <option value="normal">→ Normal</option>
+-                      <option value="alta">↑ Alta</option>
+-                      <option value="urgente">⚡ Urgente</option>
+-                    </select>
++              <article key={a.id} className={`card p-4! md:p-5! border-l-4 space-y-3 ${prio.borde} ${prio.card}`}>
++                <CabeceraAudiencia a={a} etiquetaArea={a.area?.name || 'Sin área'} />
++                <Motivo texto={a.motivo} />
++
++                <div className="grid grid-cols-[1fr_auto] gap-2">
++                  <SelectorPrioridad value={a.prioridad} onChange={v => cambiarPrioridad(a, v)} />
++                  <button
++                    type="button"
++                    className="secondary tap px-4! text-sm"
++                    onClick={() => onViewPerson?.(personaId, 'screenDashboardIntendencia')}
++                    disabled={!personaId}
++                  >
++                    Ver ficha
++                  </button>
++                </div>
+ 
+-                    {/* Ver ficha */}
++                <div className="grid grid-cols-3 gap-2">
++                  {Object.entries(RESPUESTAS).map(([tipo, cfg]) => (
+                     <button
+-                      className="secondary w-full py-2 text-xs"
+-                      onClick={() => onViewPerson?.(a.persona?.id || a.person_id, 'screenDashboardIntendencia')}
+-                      disabled={!a.persona?.id && !a.person_id}
++                      key={tipo}
++                      type="button"
++                      onClick={() => abrir(a, tipo)}
++                      className={`tap px-2! py-2! text-sm font-semibold leading-tight rounded-xl border ${cfg.cls}`}
+                     >
+-                      Ver ficha
++                      {cfg.boton}
+                     </button>
+-
+-                    {/* Panel de respuesta */}
+-                    {respondiendo?.id === a.id ? (
+-                      <div className="flex flex-col gap-2 p-3 rounded-xl bg-white/3 border border-white/8">
+-                        
+-                        <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+-                          Respuesta para Mesa de Entrada
+-                        </p>
+-
+-                        <textarea
+-                          placeholder="Observaciones / detalle de la respuesta (opcional)..."
+-                          value={respuestaTexto}
+-                          onChange={e => setRespuestaTexto(e.target.value)}
+-                          rows={2}
+-                          className="text-xs resize-none"
+-                        />
+-
+-                        {/* Si eligió derivar: mostrar selector de área */}
+-                        {respondiendo.tipo === 'derivado' && (
+-                          <div className="flex flex-col gap-1">
+-                            <p className="text-[10px] text-muted px-0.5">Derivar a:</p>
+-                            {areas.filter(ar => {
+-                              const n = ar.name?.toLowerCase();
+-                              return n !== 'mesa de entrada' && n !== 'intendencia';
+-                            }).map(ar => (
+-                              <button
+-                                key={ar.id}
+-                                onClick={() => handleResponder(a.id, 'derivado', ar.id)}
+-                                className="w-full text-left px-3 py-2 rounded-lg bg-white/4 border 
+-                                           border-white/8 text-xs text-white/60 hover:bg-accent2/10 
+-                                           hover:text-accent hover:border-accent/20 transition-all"
+-                              >
+-                                → {ar.name}
+-                              </button>
+-                            ))}
+-                          </div>
+-                        )}
+-
+-                        {/* Si eligió atendido o no_atendido: botón confirmar */}
+-                        {respondiendo.tipo !== 'derivado' && (
+-                          <button
+-                            onClick={() => handleResponder(a.id, respondiendo.tipo)}
+-                            className={`w-full py-2 text-xs font-bold rounded-xl transition-all ${
+-                              respondiendo.tipo === 'atendido'
+-                                ? 'bg-teal-500/15 border border-teal-500/25 text-teal-400 hover:bg-teal-500/25'
+-                                : 'bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20'
+-                            }`}
+-                          >
+-                            {respondiendo.tipo === 'atendido' ? '✓ Confirmar atención' : '✗ Confirmar no atención'}
+-                          </button>
+-                        )}
+-
+-                        <button
+-                          onClick={() => { setRespondiendo(null); setRespuestaTexto(''); }}
+-                          className="w-full py-1.5 text-xs text-muted hover:text-white transition-colors"
+-                        >
+-                          Cancelar
+-                        </button>
+-                      </div>
+-
+-                    ) : (
+-
+-                      /* Botones de respuesta rápida */
+-                      <div className="flex flex-col gap-1.5">
+-                        <p className="text-[9px] font-black text-white/25 uppercase tracking-widest px-0.5">
+-                          Responder a Mesa de Entrada
+-                        </p>
+-                        <div className="grid grid-cols-3 gap-1.5">
+-                          <button
+-                            onClick={() => { setRespondiendo({ id: a.id, tipo: 'atendido' }); setRespuestaTexto(''); }}
+-                            className="py-2 text-[10px] font-bold rounded-xl bg-teal-500/10 border 
+-                                       border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all"
+-                            title="Se atiende"
+-                          >
+-                            ✓ Atiende
+-                          </button>
+-                          <button
+-                            onClick={() => { setRespondiendo({ id: a.id, tipo: 'no_atendido' }); setRespuestaTexto(''); }}
+-                            className="py-2 text-[10px] font-bold rounded-xl bg-red-500/8 border 
+-                                       border-red-500/18 text-red-400 hover:bg-red-500/15 transition-all"
+-                            title="No se atiende"
+-                          >
+-                            ✗ No atiende
+-                          </button>
+-                          <button
+-                            onClick={() => { setRespondiendo({ id: a.id, tipo: 'derivado' }); setRespuestaTexto(''); }}
+-                            className="py-2 text-[10px] font-bold rounded-xl bg-amber-500/8 border 
+-                                       border-amber-500/20 text-amber-400 hover:bg-amber-500/15 transition-all"
+-                            title="Derivar a otra área"
+-                          >
+-                            → Deriva
+-                          </button>
+-                        </div>
+-                      </div>
+-                    )}
+-                  </div>
++                  ))}
+                 </div>
+-              </div>
++              </article>
+             );
+           })}
+         </div>
+       )}
++
++      {respondiendo && (
++        <HojaInferior
++          titulo={r.titulo}
++          subtitulo={`${respondiendo.audiencia.persona?.apellido_nombre || ''} · DNI ${respondiendo.audiencia.persona?.dni || '—'}`}
++          onClose={cerrar}
++        >
++          {respondiendo.tipo === 'derivado' && (
++            <fieldset className="space-y-2">
++              <legend className="text-sm text-muted mb-2">¿A qué área?</legend>
++              {areas.length === 0 && <p className="text-sm text-muted">Cargando áreas…</p>}
++              {areas.map(ar => (
++                <button
++                  key={ar.id}
++                  type="button"
++                  onClick={() => setAreaDestino(ar.id)}
++                  aria-pressed={areaDestino === ar.id}
++                  className={`tap w-full justify-start! text-left px-4! text-base rounded-xl border transition-colors
++                    ${areaDestino === ar.id
++                      ? 'bg-accent/20 border-accent text-white'
++                      : 'bg-white/5 border-white/10 text-white/80'}`}
++                >
++                  <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${areaDestino === ar.id ? 'border-accent bg-accent' : 'border-white/40'}`} aria-hidden />
++                  {ar.name}
++                </button>
++              ))}
++            </fieldset>
++          )}
++
++          <div>
++            <label htmlFor="respuesta-intendencia">Observación para Mesa de Entrada (opcional)</label>
++            <textarea
++              id="respuesta-intendencia"
++              rows={3}
++              value={texto}
++              onChange={e => setTexto(e.target.value)}
++              placeholder="Detalle de la respuesta…"
++              className="resize-none"
++            />
++          </div>
++
++          <ErrorEnHoja mensaje={errorHoja} />
++
++          <button
++            type="button"
++            onClick={confirmar}
++            disabled={guardando || (respondiendo.tipo === 'derivado' && !areaDestino)}
++            className="primary tap w-full text-base disabled:opacity-40"
++          >
++            {guardando ? 'Guardando…'
++              : respondiendo.tipo === 'derivado'
++                ? (areaDestino ? `Derivar a ${areas.find(ar => ar.id === areaDestino)?.name || ''}` : 'Elegí un área')
++                : respondiendo.tipo === 'atendido' ? 'Confirmar: se atiende' : 'Confirmar: no se atiende'}
++          </button>
++        </HojaInferior>
++      )}
++
++      <Aviso aviso={aviso} onCerrar={cerrarAviso} />
+     </section>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/src/components/layout/TopBar.jsx b/src/components/layout/TopBar.jsx
+index 4829ace..fe2372e 100644
+--- a/src/components/layout/TopBar.jsx
++++ b/src/components/layout/TopBar.jsx
+@@ -1,6 +1,6 @@
+ import React from 'react';
+ 
+-const TopBar = ({ activeScreen, onToggleSidebar, onLogout }) => {
++const TopBar = ({ activeScreen, onToggleSidebar, onLogout, unreadCount = 0 }) => {
+   const titles = {
+     screenDashboard: 'Dashboard',
+     screenCases: 'Registro de atenciones',
+@@ -10,15 +10,23 @@ const TopBar = ({ activeScreen, onToggleSidebar, onLogout }) => {
+     screenMesaEntrada: 'Mesa de Entrada',
+     screenDashboardIntendencia: 'Personas para atención',
+     screenDashboardArea: 'Mi bandeja',
++    screenDashboardFarmacia: 'Farmacia Municipal',
+   };
+ 
+   return (
+-    <header className="flex items-center justify-between py-5 border-b border-white/5 w-full">
++    <header className="flex items-center justify-between py-3 md:py-5 border-b border-white/5 w-full">
+       <div className="flex items-center gap-4">
+         <button
+           onClick={onToggleSidebar}
+-          className="lg:hidden p-2.5 bg-white/5 rounded-xl border border-white/8 text-white"
++          className="lg:hidden relative p-2.5 bg-white/5 rounded-xl border border-white/8 text-white tap min-w-[44px]"
++          aria-label={unreadCount > 0 ? `Abrir menú (${unreadCount} derivaciones nuevas)` : 'Abrir menú'}
+         >
++          {/* En celular el menú está oculto: el aviso de derivaciones nuevas va sobre el botón */}
++          {unreadCount > 0 && (
++            <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
++              {unreadCount > 99 ? '99+' : unreadCount}
++            </span>
++          )}
+           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+           </svg>
+@@ -32,7 +40,8 @@ const TopBar = ({ activeScreen, onToggleSidebar, onLogout }) => {
+         </div>
+       </div>
+ 
+-      <div className="flex items-center gap-3">
++      {/* En celular "Cerrar sesión" queda en el menú lateral: libera espacio en el encabezado */}
++      <div className="hidden sm:flex items-center gap-3">
+         <button onClick={onLogout} className="secondary px-4 py-2 text-sm">
+           Cerrar sesión
+         </button>
+diff --git a/src/index.css b/src/index.css
+index 9484aeb..54e9f55 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -233,3 +233,42 @@
+   to   { opacity: 1; transform: translateY(0); }
+ }
+ .fade-in { animation: fadeIn 0.25s ease forwards; }
++
++/* ─────────────────────────────────────────────────────────────────────────────
++   Celular
++   ───────────────────────────────────────────────────────────────────────────── */
++html {
++  -webkit-text-size-adjust: 100%;
++  -webkit-tap-highlight-color: transparent;
++}
++
++@media (max-width: 767px) {
++  /* iPhone hace zoom en cualquier campo con letra menor a 16px.
++     !important porque varios campos tienen text-xs como utilidad. */
++  input, select, textarea {
++    font-size: 16px !important;
++  }
++
++  /* Etiquetas legibles al sol y con una mano */
++  label {
++    font-size: 0.75rem;
++  }
++}
++
++/* Botones táctiles de las bandejas: altura mínima recomendada para el dedo (44px) */
++.tap {
++  min-height: 44px;
++}
++
++/* Hoja inferior (bottom sheet) */
++@keyframes subirHoja {
++  from { transform: translateY(100%); }
++  to   { transform: translateY(0); }
++}
++.hoja-entrar { animation: subirHoja 0.22s ease-out; }
++@media (min-width: 768px) {
++  .hoja-entrar { animation: fadeIn 0.2s ease forwards; }
++}
++
++/* Respeta la barra de gestos del iPhone */
++.pb-seguro { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+diff --git a/src/lib/audiencias.js b/src/lib/audiencias.js
+new file mode 100644
+index 0000000..a8e8dbb
+--- /dev/null
++++ b/src/lib/audiencias.js
+@@ -0,0 +1,118 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { supabase } from './supabase';
++
++export const ORDEN_PRIORIDAD = { urgente: 0, alta: 1, normal: 2, baja: 3 };
++
++export const PRIORIDAD = {
++  urgente: { label: 'Urgente', icono: '⚡', badge: 'bg-red-500/15 text-red-300 border-red-500/30',       borde: 'border-l-red-500',   card: 'bg-red-500/5' },
++  alta:    { label: 'Alta',    icono: '↑',  badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30', borde: 'border-l-amber-500', card: '' },
++  normal:  { label: 'Normal',  icono: '→',  badge: 'bg-accent/10 text-accent border-accent/25',         borde: 'border-l-accent/50', card: '' },
++  baja:    { label: 'Baja',    icono: '↓',  badge: 'bg-white/5 text-white/60 border-white/15',          borde: 'border-l-white/20',  card: '' },
++};
++
++export const ordenarPorPrioridad = (rows) =>
++  [...rows].sort((a, b) =>
++    (ORDEN_PRIORIDAD[a.prioridad] ?? 2) - (ORDEN_PRIORIDAD[b.prioridad] ?? 2)
++    || new Date(a.created_at) - new Date(b.created_at));
++
++const SELECT_AUDIENCIA = `id, person_id, motivo, estado, prioridad, area_id, created_at,
++  tipo_respuesta, respuesta, respondido_at, respondido_por, observaciones_area,
++  persona:persons!person_id(id, apellido_nombre, dni),
++  area:areas!area_id(id, name)`;
++
++/**
++ * Bandeja de audiencias con actualización en tiempo real.
++ * Pensada para celular: al volver a la app (pantalla desbloqueada, cambio de pestaña
++ * o vuelve la señal) recarga, porque el canal en tiempo real se corta en segundo plano.
++ */
++export function useAudiencias({ estado, areaId = null, habilitado = true, canal }) {
++  const [audiencias, setAudiencias] = useState([]);
++  const [loading, setLoading] = useState(habilitado);
++  const [error, setError] = useState('');
++  const pedidoActual = useRef(0);
++
++  // Trae los datos. No toca el estado antes del primer await (se llama desde un efecto).
++  const cargar = useCallback(async () => {
++    if (!habilitado) return;
++    const pedido = ++pedidoActual.current;
++    let q = supabase.from('audiencias').select(SELECT_AUDIENCIA).eq('estado', estado);
++    if (areaId) q = q.eq('area_id', areaId);
++    const { data, error: err } = await q.order('created_at', { ascending: true });
++    if (pedido !== pedidoActual.current) return; // llegó una respuesta más nueva
++    if (err) {
++      setError('No se pudo actualizar la bandeja. Revisá la conexión.');
++    } else {
++      setError('');
++      setAudiencias(ordenarPorPrioridad(data || []));
++    }
++    setLoading(false);
++  }, [estado, areaId, habilitado]);
++
++  // Botón "Actualizar": muestra el indicador de carga
++  const recargar = useCallback(() => {
++    setLoading(true);
++    return cargar();
++  }, [cargar]);
++
++  useEffect(() => {
++    if (!habilitado) return undefined;
++    // cargar() solo actualiza el estado después de la respuesta de la red (patrón de suscripción)
++    // eslint-disable-next-line react-hooks/set-state-in-effect
++    cargar();
++
++    const channel = supabase
++      .channel(canal)
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'audiencias' }, () => cargar())
++      .subscribe();
++
++    const alVolver = () => {
++      if (document.visibilityState === 'visible') cargar();
++    };
++    document.addEventListener('visibilitychange', alVolver);
++    window.addEventListener('online', cargar);
++
++    return () => {
++      supabase.removeChannel(channel);
++      document.removeEventListener('visibilitychange', alVolver);
++      window.removeEventListener('online', cargar);
++    };
++  }, [cargar, habilitado, canal]);
++
++  return { audiencias, setAudiencias, loading, error, recargar };
++}
++
++/**
++ * Actualiza una audiencia y CONFIRMA que se guardó.
++ * Con RLS, un update sin permiso no da error: simplemente no cambia filas.
++ * Por eso se pide la fila de vuelta y se trata "0 filas" como error.
++ */
++export async function actualizarAudiencia(id, cambios) {
++  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
++    return { error: new Error('Sin conexión. No se guardó; probá de nuevo cuando tengas señal.') };
++  }
++  const { data, error } = await supabase
++    .from('audiencias')
++    .update({ ...cambios, updated_at: new Date().toISOString() })
++    .eq('id', id)
++    .select('id');
++  if (error) {
++    const sinRed = /fetch|network|timeout|conex/i.test(error.message || '');
++    return { error: new Error(sinRed
++      ? 'Sin conexión con el servidor. No se guardó; probá de nuevo en un momento.'
++      : 'No se pudo guardar: ' + error.message) };
++  }
++  if (!data || data.length === 0) return { error: new Error('No se pudo guardar (sin permiso o la audiencia ya no existe).') };
++  return { error: null };
++}
++
++/** Copia de los campos que cambia una respuesta, para poder deshacerla. */
++export const fotoAudiencia = (a) => ({
++  estado: a.estado,
++  area_id: a.area_id,
++  prioridad: a.prioridad,
++  tipo_respuesta: a.tipo_respuesta ?? null,
++  respuesta: a.respuesta ?? null,
++  respondido_at: a.respondido_at ?? null,
++  respondido_por: a.respondido_por ?? null,
++  observaciones_area: a.observaciones_area ?? null,
++});
+diff --git a/src/lib/fechas.js b/src/lib/fechas.js
+index 0daaf62..82a3c8b 100644
+--- a/src/lib/fechas.js
++++ b/src/lib/fechas.js
+@@ -37,3 +37,19 @@ export const calcularEdad = (fechaNac) => {
+   if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+   return edad >= 0 ? edad : null;
+ };
++
++/** "hace 5 min", "hace 3 h", "ayer", "hace 4 días" o la fecha si es más vieja. */
++export const haceCuanto = (valor) => {
++  const d = valor instanceof Date ? valor : new Date(valor);
++  if (Number.isNaN(d.getTime())) return '';
++  const seg = Math.max(0, (Date.now() - d.getTime()) / 1000);
++  if (seg < 60) return 'recién';
++  const min = Math.floor(seg / 60);
++  if (min < 60) return `hace ${min} min`;
++  const h = Math.floor(min / 60);
++  if (h < 24) return `hace ${h} h`;
++  const dias = Math.floor(h / 24);
++  if (dias === 1) return 'ayer';
++  if (dias < 7) return `hace ${dias} días`;
++  return d.toLocaleDateString('es-AR');
++};

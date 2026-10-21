@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { X, Save, Loader2 } from 'lucide-react';
+import { hoyLocal, formatFecha } from '../../lib/fechas';
 
 // ── Modal de edición de caso ─────────────────────────────────────────────────
 const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
@@ -10,14 +11,47 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
     ingresos:    caseData.ingresos    ?? '',
     actual_date: caseData.actual_date ? caseData.actual_date.split('T')[0] : (caseData.created_at?.split('T')[0] || ''),
     estado:      caseData.estado      || 'abierto',
-    // Datos de la persona
-    telefono:    person?.telefono     || '',
-    domicilio:   person?.domicilio    || '',
-    trabaja:     person?.trabaja_actualmente || '',
-    estado_civil: person?.estado_civil || '',
+    // Datos de la persona: se cargan desde la tabla persons (ver efecto abajo)
+    telefono:    '',
+    domicilio:   '',
+    trabaja:     '',
+    estado_civil: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+
+  // ERROR CORREGIDO: antes estos campos se tomaban de la fila del CASO, que no los guarda.
+  // El formulario abría vacío y al guardar borraba teléfono, domicilio, estado civil y
+  // situación laboral de la persona. Ahora se leen de la ficha real de la persona.
+  const [personaOriginal, setPersonaOriginal] = useState(null);
+  const [cargandoPersona, setCargandoPersona] = useState(!!caseData.person_id);
+
+  useEffect(() => {
+    if (!caseData.person_id) return undefined;
+    let vigente = true;
+    supabase
+      .from('persons')
+      .select('telefono, domicilio, estado_civil, trabaja_actualmente')
+      .eq('id', caseData.person_id)
+      .maybeSingle()
+      .then(({ data, error: err }) => {
+        if (!vigente) return;
+        if (err || !data) {
+          setError('No se pudieron cargar los datos de la persona. Los datos personales no se modificarán.');
+        } else {
+          const original = {
+            telefono:     data.telefono || '',
+            domicilio:    data.domicilio || '',
+            trabaja:      data.trabaja_actualmente || '',
+            estado_civil: data.estado_civil || '',
+          };
+          setPersonaOriginal(original);
+          setForm(p => ({ ...p, ...original }));
+        }
+        setCargandoPersona(false);
+      });
+    return () => { vigente = false; };
+  }, [caseData.person_id]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -34,16 +68,22 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
       }).eq('id', caseData.id);
       if (cErr) throw cErr;
 
-      // Actualizar persona si tenemos person_id
-      if (caseData.person_id) {
-        const { error: pErr } = await supabase.from('persons').update({
-          telefono:          form.telefono          || null,
-          domicilio:         form.domicilio         || null,
-          trabaja_actualmente: form.trabaja         || null,
-          estado_civil:      form.estado_civil      || null,
-          updated_at:        new Date().toISOString(),
-        }).eq('id', caseData.person_id);
-        if (pErr) throw pErr;
+      // Actualizar SOLO los datos de la persona que el usuario cambió.
+      // Si no se pudieron cargar (personaOriginal = null), no se toca la persona.
+      if (caseData.person_id && personaOriginal) {
+        const columna = { telefono: 'telefono', domicilio: 'domicilio', trabaja: 'trabaja_actualmente', estado_civil: 'estado_civil' };
+        const cambios = {};
+        for (const [campo, col] of Object.entries(columna)) {
+          const nuevo = (form[campo] || '').trim();
+          if (nuevo !== (personaOriginal[campo] || '').trim()) cambios[col] = nuevo || null;
+        }
+        if (Object.keys(cambios).length > 0) {
+          const { error: pErr } = await supabase.from('persons').update({
+            ...cambios,
+            updated_at: new Date().toISOString(),
+          }).eq('id', caseData.person_id);
+          if (pErr) throw pErr;
+        }
       }
 
       onSaved();
@@ -59,7 +99,7 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
 
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-xl z-6000 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-card w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-[32px] border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.5)] flex flex-col">
+      <div className="bg-card w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-4xl border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.5)] flex flex-col">
         
         {/* Header */}
         <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0">
@@ -88,7 +128,7 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Estado</label>
-                <select value={form.estado} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))} className="min-h-[44px]">
+                <select value={form.estado} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))} className="min-h-11">
                   <option value="abierto">Abierto</option>
                   <option value="en_seguimiento">En seguimiento</option>
                   <option value="resuelto">Resuelto</option>
@@ -133,7 +173,7 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Estado Civil</label>
-              <select value={form.estado_civil} onChange={e => setForm(p => ({ ...p, estado_civil: e.target.value }))} className="min-h-[44px]">
+              <select value={form.estado_civil} onChange={e => setForm(p => ({ ...p, estado_civil: e.target.value }))} className="min-h-11">
                 <option value="">Seleccione...</option>
                 <option value="soltero">Soltero/a</option>
                 <option value="casado">Casado/a</option>
@@ -152,9 +192,10 @@ const EditCaseModal = ({ caseData, person, areas, onClose, onSaved }) => {
 
           {/* Footer sticky */}
           <div className="p-6 border-t border-white/5 flex gap-3 bg-white/2 shrink-0">
-            <button type="submit" disabled={saving}
+            <button type="submit" disabled={saving || cargandoPersona}
               className="primary flex-1 py-3! flex items-center justify-center gap-2 font-black">
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Save className="w-4 h-4" /> Guardar Cambios</>}
+              {cargandoPersona ? <><Loader2 className="w-4 h-4 animate-spin" /> Cargando datos...</>
+                : saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Guardando...</> : <><Save className="w-4 h-4" /> Guardar Cambios</>}
             </button>
             <button type="button" onClick={onClose} className="secondary px-8! py-3!">Cancelar</button>
           </div>
@@ -176,10 +217,16 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
   });
   const [grouped, setGrouped] = useState([]);
   const [expanded, setExpanded] = useState({});
+  const [mostrarFiltros, setMostrarFiltros] = useState(false); // en celular los filtros arrancan plegados
   const [status, setStatus] = useState('Aplicá filtros y cargá casos.');
   const [loading, setLoading] = useState(false);
   const [prestacionesList, setPrestacionesList] = useState([]);
   const [editCase, setEditCase] = useState(null);   // { caseData, person }
+
+  // Estados de paginación
+  const [currentPage, setCurrentPage] = useState(0);
+  const [allCases, setAllCases] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
 
   // Determinar si el usuario puede ver todos los casos
   // superadmin siempre puede ver todo; operadores según can_view_all
@@ -216,20 +263,22 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
     loadPrestaciones();
   }, []);
 
-  const fetchCases = async (currentFilters) => {
+  const fetchCases = async (currentFilters = null, isLoadMore = false) => {
     const f = currentFilters || filters;
     setLoading(true);
     setStatus('Buscando casos...');
     try {
+      const LIMIT = 200;
+      const nextPage = isLoadMore ? currentPage + 1 : 0;
+
       let q = supabase
         .from('cases')
         .select(`
           *,
           creador:profiles!created_by (full_name),
-          persona:persons!person_id (apellido_nombre, dni)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(200);
+          persona:persons!person_id (apellido_nombre, dni, domicilio)
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false });
 
       // Si hay filtro de prestación, obtener los case_id correspondientes
       let prestacionCaseIds = null;
@@ -243,7 +292,9 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
         const { data: prestData } = await prestQ;
         prestacionCaseIds = (prestData || []).map(p => p.case_id).filter(Boolean);
         if (prestacionCaseIds.length === 0) {
+          setAllCases([]);
           setGrouped([]);
+          setTotalCount(0);
           setStatus('No se encontraron atenciones con esa prestación.');
           setLoading(false);
           return;
@@ -256,7 +307,9 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
         if (userAreaId) {
           q = q.eq('area_id', userAreaId);
         } else {
+          setAllCases([]);
           setGrouped([]);
+          setTotalCount(0);
           setStatus('No tenés un área asignada. Contactá al administrador.');
           setLoading(false);
           return;
@@ -269,19 +322,30 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
       if (f.from) q = q.gte('created_at', f.from);
       if (f.to)   q = q.lte('created_at', f.to + 'T23:59:59');
 
-      const { data, error } = await q;
+      // Server-side filters
+      if (f.dni) {
+        q = q.ilike('dni', `%${f.dni}%`);
+      }
+      if (f.name) {
+        q = q.ilike('apellido_nombre', `%${f.name}%`);
+      }
+      if (f.estado) {
+        q = q.eq('estado', f.estado);
+      }
+
+      // Rango de paginación
+      const start = nextPage * LIMIT;
+      const end = (nextPage + 1) * LIMIT - 1;
+      q = q.range(start, end);
+
+      const { data, count, error } = await q;
       if (error) throw error;
 
-      let rows = data || [];
+      let newRows = data || [];
 
-      // Filtros cliente (dni y nombre vienen del join)
-      if (filters.dni) rows = rows.filter(c => (c.persona?.dni || c.dni || '').includes(f.dni));
-      if (f.name) rows = rows.filter(c => (c.persona?.apellido_nombre || c.apellido_nombre || '').toLowerCase().includes(f.name.toLowerCase()));
-      if (f.estado) rows = rows.filter(c => (c.estado || 'abierto') === f.estado);
-
-      // Cargar TODAS las prestaciones de los casos para mostrar el detalle
-      if (rows.length > 0) {
-        const caseIds = rows.map(c => c.id);
+      // Cargar prestaciones solo para los casos nuevos
+      if (newRows.length > 0) {
+        const caseIds = newRows.map(c => c.id);
         let prestQuery = supabase
           .from('todas_las_prestaciones')
           .select('*')
@@ -299,22 +363,28 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
           prestMap[p.case_id].push(p);
         });
 
-        rows = rows.map(c => ({ 
+        newRows = newRows.map(c => ({ 
           ...c, 
           prestaciones_filtradas: prestMap[c.id] || [],
           todas_prestaciones: prestMap[c.id] || []
         }));
       }
 
+      const updatedCases = isLoadMore ? [...allCases, ...newRows] : newRows;
+      setAllCases(updatedCases);
+      setCurrentPage(nextPage);
+      setTotalCount(count || 0);
+
       // Agrupar por person_id
       const map = {};
-      rows.forEach(c => {
+      updatedCases.forEach(c => {
         const pid = c.person_id;
         if (!map[pid]) {
           map[pid] = {
             person_id: pid,
             dni: c.persona?.dni || c.dni || '-',
             apellido_nombre: c.persona?.apellido_nombre || c.apellido_nombre || '-',
+            domicilio: c.persona?.domicilio || c.domicilio || '-',
             cases: []
           };
         }
@@ -327,7 +397,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
       );
 
       setGrouped(persons);
-      setStatus(`OK. ${persons.length} persona(s) encontradas — ${rows.length} caso(s) en total.`);
+      setStatus(`OK. ${persons.length} persona(s) encontradas — ${updatedCases.length} caso(s) en total.`);
     } catch (error) {
       console.error(error);
       setStatus(`Error: ${error.message}`);
@@ -342,7 +412,9 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
   };
 
   const clearFilters = () => {
-    setFilters({ dni: '', name: '', areaId: '', estado: '', from: '', to: '', prestacion: '' });
+    const emptyFilters = { dni: '', name: '', areaId: '', estado: '', from: '', to: '', prestacion: '' };
+    setFilters(emptyFilters);
+    fetchCases(emptyFilters, false);
   };
 
   const toggleExpand = (personId) => {
@@ -361,32 +433,68 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
       const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs');
       const wb = XLSX.utils.book_new();
 
-      // Aplanar todos los casos de todas las personas
+      // Encabezados
       const rows = [
-        ['Apellido y Nombre', 'DNI', 'Área', 'Motivo', 'Ingresos', 'Estado',
-         'Fecha del Caso', 'Operador', 'Caso ID']
+        [
+          'Apellido y Nombre', 'DNI', 'Domicilio', 'Área',
+          'Motivo', 'Solución',
+          'Ingresos', 'Estado', 'Fecha del Caso',
+          'Prestaciones entregadas', 'Detalle prestaciones'
+        ]
       ];
 
       grouped.forEach(person => {
         person.cases.forEach(c => {
+          const prestaciones = c.todas_prestaciones || [];
+
+          // Nombres de prestaciones separados por " | "
+          const prestNombres = prestaciones.length > 0
+            ? prestaciones.map(p => p.nombre_prestacion).filter(Boolean).join(' | ')
+            : '-';
+
+          // Resúmenes / detalles de prestaciones separados por " | "
+          const prestDetalles = prestaciones.length > 0
+            ? prestaciones
+                .map(p => [p.nombre_prestacion, p.resumen].filter(Boolean).join(': '))
+                .join(' | ')
+            : '-';
+
           rows.push([
             person.apellido_nombre,
             person.dni,
+            person.domicilio || '-',
             c.area_name || areas.find(a => a.id === c.area_id)?.name || '-',
-            c.motivo || '-',
+            c.motivo   || '-',
+            c.solucion || '-',
             c.ingresos || 0,
-            c.estado || 'abierto',
-            new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR'),
-            c.creador?.full_name || 'Sistema',
-            c.id
+            c.estado   || 'abierto',
+            formatFecha(c.actual_date || c.created_at),
+            prestNombres,
+            prestDetalles
           ]);
         });
       });
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // Ancho de columnas automático (aproximado)
+      ws['!cols'] = [
+        { wch: 30 }, // Apellido y Nombre
+        { wch: 14 }, // DNI
+        { wch: 35 }, // Domicilio
+        { wch: 18 }, // Área
+        { wch: 40 }, // Motivo
+        { wch: 40 }, // Solución
+        { wch: 12 }, // Ingresos
+        { wch: 16 }, // Estado
+        { wch: 16 }, // Fecha
+        { wch: 40 }, // Prestaciones
+        { wch: 60 }, // Detalle prestaciones
+      ];
+
       XLSX.utils.book_append_sheet(wb, ws, 'Atenciones');
 
-      const fecha = new Date().toISOString().split('T')[0];
+      const fecha = hoyLocal();
       XLSX.writeFile(wb, `atenciones_${fecha}.xlsx`);
     } catch (err) {
       console.error(err);
@@ -411,14 +519,14 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
             </p>
           </div>
           <div className="flex gap-2 w-full md:w-auto">
-            <button className="secondary flex-1 md:flex-none py-3! px-6! text-xs font-black uppercase tracking-widest min-h-[44px]" onClick={() => fetchCases(filters)} disabled={loading}>
+            <button className="secondary flex-1 md:flex-none py-3! px-6! text-xs font-black uppercase tracking-widest min-h-11" onClick={() => fetchCases(filters)} disabled={loading}>
               {loading ? 'Buscando...' : 'Buscar'}
             </button>
-            <button className="secondary flex-1 md:flex-none py-3! px-6! text-xs font-black uppercase tracking-widest min-h-[44px]" onClick={clearFilters}>
+            <button className="secondary flex-1 md:flex-none py-3! px-6! text-xs font-black uppercase tracking-widest min-h-11" onClick={clearFilters}>
               Limpiar
             </button>
             <button
-              className="secondary flex-1 md:flex-none py-3! px-6! text-xs font-black uppercase tracking-widest min-h-[44px]"
+              className="secondary flex-1 md:flex-none py-3! px-6! text-xs font-black uppercase tracking-widest min-h-11"
               onClick={handleExportExcel}
               disabled={grouped.length === 0}
               title="Exportar resultados a Excel"
@@ -428,20 +536,31 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
           </div>
         </div>
 
+        {/* Celular: los filtros ocupaban toda la pantalla antes de ver un resultado */}
+        <button
+          type="button"
+          onClick={() => setMostrarFiltros(v => !v)}
+          aria-expanded={mostrarFiltros}
+          className="md:hidden secondary tap w-full justify-between! mb-4 text-sm"
+        >
+          <span>Filtros{Object.values(filters).filter(Boolean).length > 0 ? ` (${Object.values(filters).filter(Boolean).length} activos)` : ''}</span>
+          <span aria-hidden>{mostrarFiltros ? '▲' : '▼'}</span>
+        </button>
+        <div className={mostrarFiltros ? '' : 'hidden md:block'}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase font-bold text-muted">Filtro DNI</label>
-            <input id="dni" placeholder="Ej: 30123456" value={filters.dni} onChange={handleFilterChange} className="py-3! text-sm min-h-[44px]" />
+            <input id="dni" placeholder="Ej: 30123456" value={filters.dni} onChange={handleFilterChange} className="py-3! text-sm min-h-11" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase font-bold text-muted">Filtro Nombre</label>
-            <input id="name" placeholder="Ej: Pérez" value={filters.name} onChange={handleFilterChange} className="py-3! text-sm min-h-[44px]" />
+            <input id="name" placeholder="Ej: Pérez" value={filters.name} onChange={handleFilterChange} className="py-3! text-sm min-h-11" />
           </div>
           {/* El filtro de área solo se muestra a quienes pueden ver todo */}
           {canViewAll && (
             <div className="space-y-1.5">
               <label className="text-[10px] uppercase font-bold text-muted">Filtro Área</label>
-              <select id="areaId" value={filters.areaId} onChange={handleFilterChange} className="py-3! text-sm min-h-[44px]">
+              <select id="areaId" value={filters.areaId} onChange={handleFilterChange} className="py-3! text-sm min-h-11">
                 <option value="">Todas las áreas</option>
                 {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
@@ -453,7 +572,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
               id="prestacion" 
               value={filters.prestacion} 
               onChange={handleFilterChange} 
-              className="py-3! text-sm min-h-[44px]"
+              className="py-3! text-sm min-h-11"
             >
               <option value="">Todas las prestaciones</option>
               {prestacionesList.map(p => (
@@ -463,7 +582,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase font-bold text-muted">Estado</label>
-            <select id="estado" value={filters.estado} onChange={handleFilterChange} className="py-3! text-sm min-h-[44px]">
+            <select id="estado" value={filters.estado} onChange={handleFilterChange} className="py-3! text-sm min-h-11">
               <option value="">Todos los estados</option>
               <option value="abierto">Abierto</option>
               <option value="en_seguimiento">En seguimiento</option>
@@ -476,19 +595,30 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase font-bold text-muted">Desde fecha</label>
-            <input id="from" type="date" value={filters.from} onChange={handleFilterChange} className="py-3! text-sm min-h-[44px]" />
+            <input id="from" type="date" value={filters.from} onChange={handleFilterChange} className="py-3! text-sm min-h-11" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase font-bold text-muted">Hasta fecha</label>
-            <input id="to" type="date" value={filters.to} onChange={handleFilterChange} className="py-3! text-sm min-h-[44px]" />
+            <input id="to" type="date" value={filters.to} onChange={handleFilterChange} className="py-3! text-sm min-h-11" />
           </div>
         </div>
+        </div>
 
-        <div className="mt-6 p-4 rounded-xl bg-white/2 border border-white/5 flex items-center justify-between">
-          <p className={`text-[10px] font-black uppercase tracking-widest ${loading ? 'loading text-accent' : 'text-muted'}`}>{status}</p>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${grouped.length > 0 ? 'bg-accent' : 'bg-muted/20'}`}></div>
-            <span className="text-[10px] font-black text-white">{grouped.length} personas</span>
+        <div className="mt-6 p-4 rounded-xl bg-white/2 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="space-y-1">
+            <p className={`text-[10px] font-black uppercase tracking-widest ${loading ? 'loading text-accent' : 'text-muted'}`}>{status}</p>
+            {totalCount > allCases.length && (
+              <p className="text-[10px] font-bold text-accent animate-pulse">
+                Mostrando {allCases.length} de {totalCount} casos
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${grouped.length > 0 ? 'bg-accent' : 'bg-muted/20'}`}></div>
+              <span className="text-[10px] font-black text-white">{grouped.length} personas</span>
+            </div>
+            <span className="text-[10px] font-black text-muted">{allCases.length} casos cargados</span>
           </div>
         </div>
 
@@ -509,7 +639,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
               <div key={person.person_id} className="rounded-2xl border border-white/8 overflow-hidden bg-white/2">
 
                 {/* Fila principal de la persona */}
-                <div className="flex items-center gap-4 px-5 py-4">
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-3 md:gap-4 px-4 md:px-5 py-4">
                   {/* Avatar inicial */}
                   <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
                     <span className="text-sm font-black text-accent">
@@ -528,10 +658,10 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                     </p>
                   </div>
 
-                  {/* Acciones */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  {/* Acciones (en celular pasan a una fila propia, a lo ancho) */}
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto md:shrink-0">
                     <button
-                      className="secondary py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-[36px]"
+                      className="secondary tap md:min-h-9 py-2! px-4! text-[10px] font-black uppercase tracking-widest min-h-9 flex-1 md:flex-none"
                       onClick={() => onViewPerson && onViewPerson(person.person_id)}
                     >
                       Ver Ficha
@@ -541,7 +671,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold
                                    bg-accent/15 border border-accent/30 text-accent
                                    hover:bg-accent/25 hover:border-accent/50
-                                   active:scale-95 transition-all min-h-[36px]"
+                                   active:scale-95 transition-all min-h-9 tap md:min-h-9 flex-1 md:flex-none justify-center"
                         onClick={() => setEditCase({ caseData: lastCase, person: { apellido_nombre: person.apellido_nombre, ...lastCase } })}
                       >
                         ✏ Editar
@@ -552,10 +682,12 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                         value={lastCase.estado || 'abierto'}
                         onChange={async (e) => {
                           const nuevoEstado = e.target.value;
-                          await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', lastCase.id);
+                          const { error } = await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', lastCase.id);
+                          if (error) alert('No se pudo cambiar el estado: ' + error.message);
                           fetchCases();
                         }}
-                        className="text-[9px] py-1! px-2! min-h-[28px] rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
+                        aria-label="Estado del caso"
+                        className="text-[9px] py-1! px-2! min-h-7 tap md:min-h-7 w-full md:w-auto rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <option value="abierto">Abierto</option>
@@ -566,7 +698,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                     )}
                     {totalCases > 1 && (
                       <button
-                        className="secondary py-2! px-3! text-[10px] font-black uppercase tracking-widest min-h-[36px]"
+                        className="secondary tap md:min-h-9 py-2! px-3! text-[10px] font-black uppercase tracking-widest min-h-9 w-full md:w-auto"
                         onClick={() => toggleExpand(person.person_id)}
                         title={isOpen ? 'Ocultar casos' : 'Ver todos los casos'}
                       >
@@ -577,7 +709,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                 </div>
 
                 {/* Último caso resumido (siempre visible) */}
-                <div className="px-5 pb-3 flex flex-wrap gap-4 border-t border-white/5 pt-3">
+                <div className="px-4 md:px-5 pb-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-white/5 pt-3">
                   <span className="pill text-[9px]">{renderAreaName(lastCase)}</span>
                   {/* Badge de estado */}
                   <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
@@ -591,10 +723,10 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                   }`}>
                     {lastCase.estado || 'abierto'}
                   </span>
-                  <span className="text-[10px] text-muted truncate max-w-[200px]" title={lastCase.motivo}>{lastCase.motivo || 'Sin motivo'}</span>
+                  <span className="text-[10px] text-muted w-full md:w-auto md:truncate md:max-w-50" title={lastCase.motivo}>{lastCase.motivo || 'Sin motivo'}</span>
                   <span className="text-[10px] font-mono text-accent ml-auto">${lastCase.ingresos?.toLocaleString() || '0'}</span>
                   <span className="text-[10px] text-muted/50 font-mono">
-                    {new Date(lastCase.actual_date || lastCase.created_at).toLocaleDateString('es-AR')}
+                    {formatFecha(lastCase.actual_date || lastCase.created_at)}
                   </span>
                   {lastCase.prestaciones_filtradas?.length > 0 && filters.prestacion && (
                     <span className="flex items-center gap-1 bg-green-500/10 border 
@@ -626,7 +758,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                       <div key={c.id}>
                           <div className="px-5 py-3 flex flex-wrap items-center gap-3 bg-white/2 hover:bg-white/5 transition-colors">
                             <span className="text-[9px] font-mono text-muted/50 w-20 shrink-0">
-                              {new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR')}
+                              {formatFecha(c.actual_date || c.created_at)}
                             </span>
                             <span className="pill text-[9px]">{renderAreaName(c)}</span>
                             <span className="text-[10px] text-muted flex-1 truncate" title={c.motivo}>{c.motivo || 'Sin motivo'}</span>
@@ -650,7 +782,7 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
                                   await supabase.from('cases').update({ estado: nuevoEstado }).eq('id', c.id);
                                   fetchCases();
                                 }}
-                                className="text-[9px] py-1! px-2! min-h-[28px] rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
+                                className="text-[9px] py-1! px-2! min-h-7 rounded-lg border border-white/10 bg-white/5 text-white/60 cursor-pointer"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <option value="abierto">Abierto</option>
@@ -723,6 +855,26 @@ const CasesList = ({ areas, profile, onViewPerson }) => {
             );
           })}
         </div>
+
+        {/* Paginación / Cargar más */}
+        {totalCount > allCases.length && (
+          <div className="mt-6 flex justify-center">
+            <button
+              className="primary py-3! px-8! text-xs font-black uppercase tracking-widest flex items-center gap-2"
+              onClick={() => fetchCases(filters, true)}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Cargando más...
+                </>
+              ) : (
+                'Cargar más casos'
+              )}
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Modal de edición */}

@@ -47,15 +47,16 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-2000 flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-300">
-      <div className="bg-card w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-[32px] border border-white/10 shadow-2xl flex flex-col">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-2000 flex items-center justify-center p-0 md:p-8 animate-in fade-in duration-300">
+      {/* En celular ocupa toda la pantalla (antes quedaba corrida y cortada) */}
+      <div className="bg-card w-full min-w-0 max-w-full md:max-w-6xl h-full md:h-auto md:max-h-[90vh] overflow-hidden md:rounded-[32px] border-0 md:border border-white/10 shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="p-6 md:p-8 border-b border-white/5 flex items-center justify-between bg-white/2">
+        <div className="px-4 py-3 md:p-8 border-b border-white/5 flex items-center justify-between gap-3 bg-white/2">
           <div className="flex flex-col">
-            <h2 className="text-2xl font-black tracking-tight">Gestión de Personas</h2>
+            <h2 className="text-xl md:text-2xl font-black tracking-tight">Gestión de Personas</h2>
             <p className="text-[10px] uppercase font-bold text-accent tracking-widest">Base de datos de ciudadanos</p>
           </div>
-          <button className="danger p-3! rounded-2xl" onClick={onClose}>
+          <button className="danger tap min-w-[44px] p-2! md:p-3! rounded-2xl shrink-0" onClick={onClose} aria-label="Cerrar">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -63,8 +64,8 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-          <form onSubmit={handleSearch} className="flex gap-4 items-end mb-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end mb-6 md:mb-8">
             <div className="flex-1">
               <label>Buscar Ciudadano</label>
               <input 
@@ -72,14 +73,38 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="bg-white/5"
+                enterKeyHint="search"
               />
             </div>
-            <button className="primary px-8! h-[46px]" type="submit" disabled={loading}>
+            <button className="primary tap px-8! sm:h-[46px]" type="submit" disabled={loading}>
               {loading ? 'Buscando...' : 'Buscar'}
             </button>
           </form>
 
-          <div className="tableWrap bg-black/20">
+          {/* Celular: tarjetas */}
+          <ul className="md:hidden space-y-2">
+            {people.length === 0 && (
+              <li className="py-12 text-center text-sm text-muted">{status || 'Buscá por nombre, apellido o DNI'}</li>
+            )}
+            {people.map(p => (
+              <li key={p.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3 space-y-2">
+                <div>
+                  <p className="text-white font-semibold break-words">{p.apellido_nombre}</p>
+                  <p className="text-sm text-muted font-mono">DNI {p.dni}</p>
+                </div>
+                {(p.telefono || p.domicilio) && (
+                  <p className="text-sm text-white/70 break-words">
+                    {[p.telefono, p.domicilio].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                <button className="secondary tap w-full text-sm" onClick={() => { onViewPerson(p.id); onClose(); }}>
+                  Ver ficha
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden md:block tableWrap bg-black/20">
             <table>
               <thead>
                 <tr>
@@ -128,8 +153,8 @@ const PeopleModal = ({ isOpen, onClose, onViewPerson, profile }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-black/20 text-center border-t border-white/5">
-          <p className="text-[10px] text-muted font-bold uppercase tracking-widest">Total de resultados: {people.length}</p>
+        <div className="p-3 md:p-4 bg-black/20 text-center border-t border-white/5 pb-seguro">
+          <p className="text-xs text-muted font-semibold">Resultados: {people.length}</p>
         </div>
       </div>
     </div>

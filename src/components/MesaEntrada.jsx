@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { guardarPersona } from '../lib/persons';
 
 const sanitizeDni = (value) => String(value || '').replace(/\D/g, '');
 
 const savePerson = async ({ dni, apellidoNombre }) => {
-  const { data, error } = await supabase
-    .from('persons')
-    .upsert({ dni, apellido_nombre: apellidoNombre.trim(), updated_at: new Date().toISOString() }, { onConflict: 'dni' })
-    .select('id')
-    .single();
+  // No pisa datos existentes: si el DNI ya está cargado, solo completa lo que falte.
+  const { data, error } = await guardarPersona({ dni, apellido_nombre: apellidoNombre });
   return { data, error };
 };
 
@@ -18,7 +16,6 @@ const saveAudiencia = async ({ personId, motivo, areaId }) => {
     .insert([{ person_id: personId, motivo, estado: 'PENDIENTE', area_id: areaId }])
     .select('id')
     .maybeSingle();
-  if (error) console.error('DETALLE DEL ERROR:', error.message);
   return { data, error };
 };
 

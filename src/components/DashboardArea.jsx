@@ -1,266 +1,275 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-
-const PRIORIDAD = {
-  urgente: { label: 'Urgente', badge: 'bg-red-500/12 text-red-400 border-red-500/25',    border: 'border-l-red-500/60',    card: 'border-red-500/20 bg-red-500/4' },
-  alta:    { label: 'Alta',    badge: 'bg-amber-500/12 text-amber-400 border-amber-500/25', border: 'border-l-amber-500/60', card: 'border-amber-500/15' },
-  normal:  { label: 'Normal',  badge: 'bg-accent2/12 text-accent border-accent/25',       border: 'border-l-accent2/40',   card: '' },
-  baja:    { label: 'Baja',    badge: 'bg-white/8 text-white/30 border-white/10',         border: 'border-l-white/10',     card: 'opacity-80' },
-};
-
-function Avatar({ name }) {
-  const initials = name ? name.trim().split(/[, ]+/).slice(0, 2).reverse().map(w => w[0]).join('').toUpperCase() : '?';
-  return (
-    <div className="w-9 h-9 rounded-xl bg-accent2/15 flex items-center justify-center text-accent text-xs font-bold shrink-0">
-      {initials}
-    </div>
-  );
-}
-
-function AtenderModal({ audiencia, onConfirm, onClose }) {
-  const [observacion, setObservacion] = useState('');
-  const [prestacion, setPrestacion] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleConfirm = async () => {
-    setLoading(true);
-    await onConfirm({ observacion, prestacion });
-    setLoading(false);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="card w-full max-w-md border border-white/10 rounded-2xl">
-        <div className="mb-5">
-          <h3 className="text-white font-semibold text-sm mb-1">Marcar como atendida</h3>
-          <p className="text-muted text-xs">{audiencia.persona?.apellido_nombre} — DNI {audiencia.persona?.dni}</p>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label>Prestación otorgada (opcional)</label>
-            <input
-              type="text"
-              value={prestacion}
-              onChange={e => setPrestacion(e.target.value)}
-              placeholder="Ej: Módulos alimenticios, ayuda económica..."
-            />
-          </div>
-          <div>
-            <label>Observaciones</label>
-            <textarea
-              value={observacion}
-              onChange={e => setObservacion(e.target.value)}
-              placeholder="Descripción de la atención brindada..."
-              rows={3}
-              className="resize-none"
-            />
-          </div>
-        </div>
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="secondary flex-1 py-2.5 text-sm">Cancelar</button>
-          <button onClick={handleConfirm} disabled={loading} className="primary flex-1 py-2.5 text-sm disabled:opacity-50">
-            {loading ? 'Guardando...' : '✓ Confirmar'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { useAudiencias, actualizarAudiencia, fotoAudiencia, ordenarPorPrioridad, PRIORIDAD } from '../lib/audiencias';
+import {
+  CabeceraAudiencia, Motivo, SelectorPrioridad, HojaInferior, Aviso,
+  EncabezadoBandeja, BandejaVacia, ErrorConexion, ErrorEnHoja,
+} from './Bandeja/BandejaUI';
 
 export default function DashboardArea({ profile, onViewPerson }) {
-  const [audiencias, setAudiencias] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const areaId = profile?.areas?.id ?? null;
+  const areaNombre = profile?.areas?.name || 'Mi área';
+  // El superadmin supervisa: ve las derivaciones de TODAS las áreas (igual que sus notificaciones)
+  const esSuperadmin = profile?.role === 'superadmin';
+
+  const { audiencias, setAudiencias, loading, error, recargar } = useAudiencias({
+    estado: 'DERIVADO',
+    areaId: esSuperadmin ? null : areaId,
+    habilitado: esSuperadmin || !!areaId,
+    canal: esSuperadmin ? 'audiencias-area-todas' : `audiencias-area-${areaId}`,
+  });
+  const [filtroArea, setFiltroArea] = useState('todas');
   const [areas, setAreas] = useState([]);
-  const [derivandoId, setDerivandoId] = useState(null);
-  const [atendiendo, setAtendiendo] = useState(null);
-
-  const areaId = profile?.areas?.id;
-  const areaNombre = profile?.areas?.name || 'Mi Área';
-
-  const fetchAudiencias = useCallback(async () => {
-    if (!areaId) { setLoading(false); return; }
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('audiencias')
-      .select(`id, person_id, motivo, estado, prioridad, area_id, created_at,
-        persona:persons!person_id(id, apellido_nombre, dni),
-        area:areas!area_id(id, name)`)
-      .eq('estado', 'DERIVADO')
-      .eq('area_id', areaId)
-      .order('created_at', { ascending: true });
-
-    if (!error) {
-      const orden = { urgente: 0, alta: 1, normal: 2, baja: 3 };
-      setAudiencias((data || []).sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2)));
-    }
-    setLoading(false);
-  }, [areaId]);
+  const [accion, setAccion] = useState(null); // { audiencia, tipo: 'atender' | 'derivar' }
+  const [prestacion, setPrestacion] = useState('');
+  const [observacion, setObservacion] = useState('');
+  const [areaDestino, setAreaDestino] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const [errorHoja, setErrorHoja] = useState('');
+  const [aviso, setAviso] = useState(null);
+  const cerrarAviso = useCallback(() => setAviso(null), []);
 
   useEffect(() => {
-    fetchAudiencias();
-    supabase.from('areas').select('id, name').then(({ data }) => setAreas(data || []));
-    const channel = supabase
-      .channel(`area-${areaId}-realtime`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'audiencias' }, fetchAudiencias)
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [fetchAudiencias, areaId]);
+    supabase.from('areas').select('id, name').eq('active', true).order('name')
+      .then(({ data }) => setAreas(data || []));
+  }, []);
 
-  const handleAtender = async ({ observacion, prestacion }) => {
-    if (!atendiendo) return;
-    const obs = [prestacion ? `Prestación: ${prestacion}` : null, observacion || null].filter(Boolean).join('\n') || null;
-    await supabase.from('audiencias').update({ estado: 'ATENDIDO', observaciones_area: obs }).eq('id', atendiendo.id);
-    setAudiencias(prev => prev.filter(a => a.id !== atendiendo.id));
-    setAtendiendo(null);
+  const abrir = (audiencia, tipo) => {
+    setAccion({ audiencia, tipo });
+    setPrestacion('');
+    setObservacion('');
+    setAreaDestino('');
+    setErrorHoja('');
   };
+  const cerrar = useCallback(() => { if (!guardando) setAccion(null); }, [guardando]);
 
-  const handleDerivar = async (id, areaDestinoId) => {
-    await supabase.from('audiencias').update({ estado: 'DERIVADO', area_id: areaDestinoId }).eq('id', id);
-    setAudiencias(prev => prev.filter(a => a.id !== id));
-    setDerivandoId(null);
-  };
+  const confirmar = async () => {
+    const { audiencia, tipo } = accion;
+    if (tipo === 'derivar' && !areaDestino) return;
+    const antes = fotoAudiencia(audiencia);
 
-  const handleChangePrioridad = async (id, val) => {
-    await supabase.from('audiencias').update({ prioridad: val }).eq('id', id);
-    setAudiencias(prev => {
-      const orden = { urgente: 0, alta: 1, normal: 2, baja: 3 };
-      return prev.map(a => a.id === id ? { ...a, prioridad: val } : a)
-        .sort((a, b) => (orden[a.prioridad] ?? 2) - (orden[b.prioridad] ?? 2));
+    let cambios;
+    if (tipo === 'atender') {
+      const obs = [prestacion.trim() ? `Prestación: ${prestacion.trim()}` : null, observacion.trim() || null]
+        .filter(Boolean).join('\n') || null;
+      cambios = { estado: 'ATENDIDO', observaciones_area: obs };
+    } else {
+      cambios = { estado: 'DERIVADO', area_id: areaDestino };
+    }
+
+    setGuardando(true);
+    const { error: err } = await actualizarAudiencia(audiencia.id, cambios);
+    setGuardando(false);
+    if (err) {
+      setErrorHoja(err.message);
+      return;
+    }
+
+    setAudiencias(prev => prev.filter(x => x.id !== audiencia.id));
+    setAccion(null);
+    const destino = tipo === 'derivar' ? areas.find(ar => ar.id === areaDestino)?.name : null;
+    setAviso({
+      mensaje: tipo === 'atender'
+        ? `Atendida: ${audiencia.persona?.apellido_nombre || ''}`
+        : `Derivada a ${destino}: ${audiencia.persona?.apellido_nombre || ''}`,
+      onDeshacer: async () => {
+        const { error: e2 } = await actualizarAudiencia(audiencia.id, antes);
+        if (e2) { setAviso({ tipo: 'error', mensaje: 'No se pudo deshacer: ' + e2.message }); return; }
+        setAudiencias(prev => ordenarPorPrioridad([...prev.filter(x => x.id !== audiencia.id), audiencia]));
+      },
     });
   };
 
-  const urgentes = audiencias.filter(a => a.prioridad === 'urgente').length;
+  const cambiarPrioridad = async (a, prioridad) => {
+    const previa = a.prioridad;
+    setAudiencias(prev => ordenarPorPrioridad(prev.map(x => x.id === a.id ? { ...x, prioridad } : x)));
+    const { error: err } = await actualizarAudiencia(a.id, { prioridad });
+    if (err) {
+      setAudiencias(prev => ordenarPorPrioridad(prev.map(x => x.id === a.id ? { ...x, prioridad: previa } : x)));
+      setAviso({ tipo: 'error', mensaje: err.message });
+    }
+  };
+
+  // Filtro por área (solo superadmin). Los chips muestran cuántas hay en cada área.
+  const conteoPorArea = esSuperadmin
+    ? Object.values(audiencias.reduce((acc, a) => {
+        const id = a.area_id || 'sin';
+        acc[id] = acc[id] || { id, nombre: a.area?.name || 'Sin área', total: 0 };
+        acc[id].total += 1;
+        return acc;
+      }, {})).sort((x, y) => x.nombre.localeCompare(y.nombre))
+    : [];
+  const filtroVigente = filtroArea !== 'todas' && !conteoPorArea.some(c => c.id === filtroArea) ? 'todas' : filtroArea;
+  const visibles = esSuperadmin && filtroVigente !== 'todas'
+    ? audiencias.filter(a => (a.area_id || 'sin') === filtroVigente)
+    : audiencias;
+
+  const urgentes = visibles.filter(a => a.prioridad === 'urgente').length;
+
+  if (!esSuperadmin && !areaId) {
+    return (
+      <div className="card text-center py-16">
+        <p className="text-white font-medium">Sin área asignada</p>
+        <p className="text-muted text-sm mt-1">Contactá al administrador del sistema</p>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {atendiendo && <AtenderModal audiencia={atendiendo} onConfirm={handleAtender} onClose={() => setAtendiendo(null)} />}
+    <section className="space-y-4 md:space-y-6 fade-in pb-24">
+      <EncabezadoBandeja
+        titulo={esSuperadmin ? 'Bandeja — Todas las áreas' : `Bandeja — ${areaNombre}`}
+        subtitulo={esSuperadmin ? 'Derivaciones pendientes en todas las áreas' : `Derivaciones recibidas · ${areaNombre}`}
+        total={visibles.length}
+        urgentes={urgentes}
+        loading={loading}
+        onActualizar={() => recargar()}
+      />
 
-      <section className="space-y-6 fade-in">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold text-white">Bandeja — {areaNombre}</h2>
-            <p className="text-xs text-muted mt-1">Derivaciones recibidas</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {urgentes > 0 && (
-              <span className="px-3 py-1.5 rounded-lg bg-red-500/12 border border-red-500/25 text-red-400 text-xs font-medium animate-pulse">
-                ⚡ {urgentes} urgente{urgentes > 1 ? 's' : ''}
-              </span>
-            )}
-            <span className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/8 text-white/60 text-xs">
-              {audiencias.length} pendientes
-            </span>
-            <button className="secondary py-2 px-4 text-xs" onClick={fetchAudiencias} disabled={loading}>
-              {loading ? 'Actualizando...' : 'Actualizar'}
-            </button>
-          </div>
-        </div>
+      <ErrorConexion mensaje={error} onReintentar={() => recargar()} />
 
-        {loading ? (
-          <div className="text-center py-20 text-muted text-xs opacity-50">Cargando derivaciones...</div>
-        ) : !areaId ? (
-          <div className="card text-center py-20">
-            <p className="text-white font-medium text-sm">Sin área asignada</p>
-            <p className="text-muted text-xs mt-1">Contactá al administrador del sistema</p>
-          </div>
-        ) : audiencias.length === 0 ? (
-          <div className="card text-center py-20">
-            <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <p className="text-white font-medium text-sm">Sin derivaciones pendientes</p>
-            <p className="text-muted text-xs mt-1">La bandeja de {areaNombre} está al día</p>
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {audiencias.map((a) => {
-              const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
-              const fechaHora = new Date(a.created_at);
-              const isDerivando = derivandoId === a.id;
-
+      {esSuperadmin && conteoPorArea.length > 1 && (
+        // Fila de filtros: en celular se desliza de costado dentro de su propio espacio
+        <div className="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto custom-scrollbar" role="tablist" aria-label="Filtrar por área">
+          <div className="flex gap-2 w-max pb-1">
+            {[{ id: 'todas', nombre: 'Todas', total: audiencias.length }, ...conteoPorArea].map(c => {
+              const activo = filtroVigente === c.id;
               return (
-                <div key={a.id} className={`card border-l-2 py-4 px-5 transition-all duration-200 ${prio.border} ${prio.card}`}>
-                  <div className="flex flex-col md:flex-row md:items-start gap-4">
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Avatar name={a.persona?.apellido_nombre} />
-                        <div className="min-w-0">
-                          <p className="text-white font-medium text-sm truncate">{a.persona?.apellido_nombre || 'Sin nombre'}</p>
-                          <p className="text-muted text-xs font-mono">DNI {a.persona?.dni || '-'}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap mb-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-medium ${prio.badge}`}>{prio.label}</span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">
-                          Desde: {a.area?.name || '?'}
-                        </span>
-                        <span className="text-[10px] text-white/25 font-mono">
-                          {fechaHora.toLocaleDateString()} {fechaHora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      {a.motivo && <p className="text-white/40 text-xs leading-relaxed line-clamp-2">{a.motivo}</p>}
-                    </div>
-
-                    <div className="flex flex-col gap-2 w-full md:w-48 shrink-0">
-                      <select
-                        value={a.prioridad || 'normal'}
-                        onChange={e => handleChangePrioridad(a.id, e.target.value)}
-                        className="py-2 text-xs cursor-pointer"
-                      >
-                        <option value="baja">↓ Baja</option>
-                        <option value="normal">→ Normal</option>
-                        <option value="alta">↑ Alta</option>
-                        <option value="urgente">⚡ Urgente</option>
-                      </select>
-
-                      {isDerivando ? (
-                        <div className="flex flex-col gap-1.5">
-                          <p className="text-[10px] text-muted px-1 mb-0.5">Re-derivar a:</p>
-                          {areas.filter(ar => ar.id !== areaId).map(ar => (
-                            <button
-                              key={ar.id}
-                              onClick={() => handleDerivar(a.id, ar.id)}
-                              className="w-full text-left px-3 py-2 rounded-lg bg-white/4 border border-white/8 text-xs text-white/60 hover:bg-accent2/10 hover:text-accent hover:border-accent/20 transition-all"
-                            >
-                              → {ar.name}
-                            </button>
-                          ))}
-                          <button onClick={() => setDerivandoId(null)} className="w-full px-3 py-2 rounded-lg text-xs text-muted hover:text-white transition-colors">
-                            Cancelar
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button
-                            className="secondary flex-1 py-2 text-xs"
-                            onClick={() => onViewPerson?.(a.persona?.id || a.person_id, 'screenDashboardArea')}
-                            disabled={!a.persona?.id && !a.person_id}
-                          >
-                            Ver ficha
-                          </button>
-                          <button
-                            className="flex-1 py-2 text-xs rounded-xl border border-amber-500/25 bg-amber-500/8 text-amber-400 hover:bg-amber-500/15 transition-all"
-                            onClick={() => setDerivandoId(a.id)}
-                          >
-                            Re-derivar
-                          </button>
-                        </div>
-                      )}
-
-                      <button className="primary w-full py-2 text-xs" onClick={() => setAtendiendo(a)}>
-                        ✓ Atender
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <button
+                  key={c.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activo}
+                  onClick={() => setFiltroArea(c.id)}
+                  className={`tap px-4! rounded-full border text-sm whitespace-nowrap transition-colors
+                    ${activo ? 'bg-accent text-black border-accent font-semibold' : 'bg-white/5 text-white/80 border-white/15'}`}
+                >
+                  {c.nombre}
+                  <span className={`ml-1 text-xs ${activo ? 'text-black/70' : 'text-white/50'}`}>{c.total}</span>
+                </button>
               );
             })}
           </div>
-        )}
-      </section>
-    </>
+        </div>
+      )}
+
+      {loading && audiencias.length === 0 ? (
+        <div className="text-center py-16 text-muted text-sm">Cargando derivaciones…</div>
+      ) : visibles.length === 0 ? (
+        <BandejaVacia
+          titulo="Sin derivaciones pendientes"
+          detalle={esSuperadmin ? 'Ninguna área tiene derivaciones sin atender' : `La bandeja de ${areaNombre} está al día`}
+        />
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {visibles.map(a => {
+            const prio = PRIORIDAD[a.prioridad] || PRIORIDAD.normal;
+            const personaId = a.persona?.id || a.person_id;
+            return (
+              <article key={a.id} className={`card p-4! md:p-5! border-l-4 space-y-3 ${prio.borde} ${prio.card}`}>
+                <CabeceraAudiencia a={a} etiquetaArea={esSuperadmin ? `En: ${a.area?.name || 'Sin área'}` : null} />
+                <Motivo texto={a.motivo} />
+                {a.respuesta && (
+                  <div className="rounded-xl bg-white/5 border border-white/10 px-3 py-2">
+                    <p className="text-xs text-muted mb-0.5">Indicación de Intendencia</p>
+                    <p className="text-sm text-white/80">{a.respuesta}</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <SelectorPrioridad value={a.prioridad} onChange={v => cambiarPrioridad(a, v)} />
+                  <button
+                    type="button"
+                    className="secondary tap px-4! text-sm"
+                    onClick={() => onViewPerson?.(personaId, 'screenDashboardArea')}
+                    disabled={!personaId}
+                  >
+                    Ver ficha
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-[2fr_1fr] gap-2">
+                  <button type="button" className="primary tap text-base font-semibold" onClick={() => abrir(a, 'atender')}>
+                    ✓ Atender
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => abrir(a, 'derivar')}
+                    className="tap px-2! text-sm font-semibold rounded-xl border bg-amber-500/10 border-amber-500/30 text-amber-300"
+                  >
+                    → Derivar
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {accion && (
+        <HojaInferior
+          titulo={accion.tipo === 'atender' ? 'Marcar como atendida' : 'Derivar a otra área'}
+          subtitulo={`${accion.audiencia.persona?.apellido_nombre || ''} · DNI ${accion.audiencia.persona?.dni || '—'}`}
+          onClose={cerrar}
+        >
+          {accion.tipo === 'atender' ? (
+            <>
+              <div>
+                <label htmlFor="area-prestacion">Prestación otorgada (opcional)</label>
+                <input
+                  id="area-prestacion"
+                  value={prestacion}
+                  onChange={e => setPrestacion(e.target.value)}
+                  placeholder="Ej: módulo alimenticio, pasaje…"
+                />
+              </div>
+              <div>
+                <label htmlFor="area-observacion">Observaciones</label>
+                <textarea
+                  id="area-observacion"
+                  rows={3}
+                  value={observacion}
+                  onChange={e => setObservacion(e.target.value)}
+                  placeholder="Qué se hizo con esta persona…"
+                  className="resize-none"
+                />
+              </div>
+            </>
+          ) : (
+            <fieldset className="space-y-2">
+              <legend className="text-sm text-muted mb-2">¿A qué área?</legend>
+              {areas.filter(ar => ar.id !== accion.audiencia.area_id).map(ar => (
+                <button
+                  key={ar.id}
+                  type="button"
+                  onClick={() => setAreaDestino(ar.id)}
+                  aria-pressed={areaDestino === ar.id}
+                  className={`tap w-full justify-start! text-left px-4! text-base rounded-xl border transition-colors
+                    ${areaDestino === ar.id ? 'bg-accent/20 border-accent text-white' : 'bg-white/5 border-white/10 text-white/80'}`}
+                >
+                  <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${areaDestino === ar.id ? 'border-accent bg-accent' : 'border-white/40'}`} aria-hidden />
+                  {ar.name}
+                </button>
+              ))}
+            </fieldset>
+          )}
+
+          <ErrorEnHoja mensaje={errorHoja} />
+
+          <button
+            type="button"
+            onClick={confirmar}
+            disabled={guardando || (accion.tipo === 'derivar' && !areaDestino)}
+            className="primary tap w-full text-base disabled:opacity-40"
+          >
+            {guardando ? 'Guardando…'
+              : accion.tipo === 'atender' ? 'Confirmar atención'
+              : areaDestino ? `Derivar a ${areas.find(ar => ar.id === areaDestino)?.name || ''}` : 'Elegí un área'}
+          </button>
+        </HojaInferior>
+      )}
+
+      <Aviso aviso={aviso} onCerrar={cerrarAviso} />
+    </section>
   );
 }

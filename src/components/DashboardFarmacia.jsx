@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { limpiarBusqueda } from '../lib/texto';
+import { hoyLocal } from '../lib/fechas';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -168,7 +170,7 @@ function MedicamentosModal({ paciente, onClose }) {
         .from('farmacia_catalogo_con_precio')
         .select('*')
         .eq('activo', true)
-        .or(`nombre.ilike.%${busqueda}%,droga.ilike.%${busqueda}%`)
+        .or(`nombre.ilike.%${limpiarBusqueda(busqueda)}%,droga.ilike.%${limpiarBusqueda(busqueda)}%`)
         .order('nombre')
         .limit(8);
       setResultados(data || []);
@@ -325,7 +327,7 @@ function EntregaModal({ paciente, mes, anio, onClose, onSaved }) {
     setGuardando(true); setError('');
     const { data: entrega, error: errEntrega } = await supabase
       .from('farmacia_entregas')
-      .upsert({ paciente_id: paciente.id, mes, anio, observaciones: observaciones || null, fecha_entrega: new Date().toISOString().split('T')[0] }, { onConflict: 'paciente_id,mes,anio' })
+      .upsert({ paciente_id: paciente.id, mes, anio, observaciones: observaciones || null, fecha_entrega: hoyLocal() }, { onConflict: 'paciente_id,mes,anio' })
       .select('id').single();
     if (errEntrega) { setError(errEntrega.message); setGuardando(false); return; }
     await supabase.from('farmacia_entrega_items').delete().eq('entrega_id', entrega.id);
@@ -418,7 +420,7 @@ function CatalogoItemModal({ item, onClose, onSaved }) {
       const { error: ep } = await supabase.from('farmacia_precios').insert({
         medicamento_id: medId,
         precio: parseFloat(precio),
-        vigente_desde: new Date().toISOString().split('T')[0],
+        vigente_desde: hoyLocal(),
       });
       if (ep) { setError('Medicamento guardado, pero error al guardar precio: ' + ep.message); setLoading(false); return; }
     }

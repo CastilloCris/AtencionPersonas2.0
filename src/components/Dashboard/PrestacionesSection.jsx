@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Pencil, Trash2, X, Check, AlertCircle, Loader2, ChevronRight, MousePointerClick } from 'lucide-react';
+import { formatFecha } from '../../lib/fechas';
 
 // Mapeo tabla por nombre de prestación
 const TABLA_MAP = {
@@ -40,7 +41,7 @@ const Toast = ({ msg, type }) => {
   );
 };
 
-const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) => {
+const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion, prestacionesVersion = 0 }) => {
   const [catalog, setCatalog] = useState([]);
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -82,6 +83,13 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
       loadHistory(activeCaseId);
     }
   }, [activeCaseId]);
+
+  // Al cerrar el modal de prestaciones (guardar o editar) se recarga el historial.
+  // Antes no se recargaba y el operador creía que no se había guardado → duplicados.
+  useEffect(() => {
+    if (activeCaseId && prestacionesVersion > 0) loadHistory(activeCaseId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prestacionesVersion]);
 
   const loadCatalog = async (caseId) => {
     const { data: caseData } = await supabase.from('cases').select('area_id').eq('id', caseId).single();
@@ -149,7 +157,8 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
       case_id: activeCaseId,
       prestacion_id: selectedPrestacion.id,
       nombre_prestacion: selectedPrestacion.nombre,
-      resumen: resumen || null,
+      // La tabla no tiene columna 'resumen' (el insert fallaba siempre): va en observaciones
+      observaciones: resumen || null,
     });
     if (error) {
       showToast('Error al guardar: ' + error.message, 'error');
@@ -181,7 +190,7 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
     }
 
     // Llamar al handler del padre para abrir el modal en modo edición
-    onEditPrestacion({ formType, data, recordId: h.id, tabla, nombre: h.nombre_prestacion });
+    onEditPrestacion({ formType, data, recordId: h.id, tabla, nombre: h.nombre_prestacion, caseId: activeCaseId });
   };
 
   // ── ELIMINAR ─────────────────────────────────────────────────────────────
@@ -199,8 +208,6 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
     loadHistory(activeCaseId);
   };
 
-  // Expone recarga al exterior (para que el modal al guardar actualice el historial)
-  PrestacionesSection._reload = () => { if (activeCaseId) loadHistory(activeCaseId); };
 
   return (
     <section className="card space-y-6">
@@ -256,7 +263,7 @@ const PrestacionesSection = ({ lastCaseId, onOpenSelector, onEditPrestacion }) =
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-white text-sm group-hover:text-accent transition-colors">{c.apellido_nombre}</p>
                     <p className="text-[10px] text-muted mt-0.5">
-                      {c.area_name} · {c.motivo?.slice(0, 45)}{c.motivo?.length > 45 ? '...' : ''} · {new Date(c.actual_date || c.created_at).toLocaleDateString('es-AR')}
+                      {c.area_name} · {c.motivo?.slice(0, 45)}{c.motivo?.length > 45 ? '...' : ''} · {formatFecha(c.actual_date || c.created_at)}
                     </p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-accent group-hover:translate-x-0.5 transition-all shrink-0" />

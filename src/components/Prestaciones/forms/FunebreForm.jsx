@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { ArrowLeft, Save, Heart } from 'lucide-react';
+import { hoyLocal } from '../../../lib/fechas';
 
 const FunebreForm = ({ caseId, onBack, onClose, initialData, recordId, isEditing }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    fecha_fallecimiento: initialData?.fecha_fallecimiento ?? new Date().toISOString().split('T')[0],
+    fecha_fallecimiento: initialData?.fecha_fallecimiento ?? hoyLocal(),
     nombre_fallecido: initialData?.nombre_fallecido ?? '',
     apellido_fallecido: initialData?.apellido_fallecido ?? '',
     recibio_modulo: initialData?.recibio_modulo ?? false,

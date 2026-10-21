@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { guardarPersona } from '../../lib/persons';
+import { hoyLocal, parseFechaLocal, calcularEdad } from '../../lib/fechas';
+import { escapeHtml, normalizarDni, dniConPuntos } from '../../lib/texto';
 
 const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCaseId, setLastCaseId, onViewPerson }) => {
   const dniRef = useRef(null);
@@ -21,7 +24,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
   const [status, setStatus] = useState({ person: '', case: '' });
   const [loading, setLoading] = useState(false);
   const [socialAlerts, setSocialAlerts] = useState([]);
-  const [actualDate, setActualDate] = useState(new Date().toISOString().split('T')[0]);
+  const [actualDate, setActualDate] = useState(hoyLocal());
   const [showModal, setShowModal] = useState(false);
   const [printSnapshot, setPrintSnapshot] = useState(null);
 
@@ -48,7 +51,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
     }
   }, [profile]);
 
-  const normalizeDni = (v) => String(v || "").replace(/\D/g, "");
+  const normalizeDni = normalizarDni;
 
   const resetForm = () => {
     setFormData(prev => ({
@@ -58,7 +61,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
       solucion: '',
       areaId: profile?.role === 'superadmin' ? '' : (profile?.default_area_id ? String(profile.default_area_id) : '')
     }));
-    setActualDate(new Date().toISOString().split('T')[0]);
+    setActualDate(hoyLocal());
     // No limpiamos a la persona ni sus datos personales, para que pueda cargar el Grupo Familiar.
     setSocialAlerts([]);
     
@@ -83,7 +86,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
       solucion: '',
       areaId: profile?.role === 'superadmin' ? '' : (profile?.default_area_id ? String(profile.default_area_id) : '')
     });
-    setActualDate(new Date().toISOString().split('T')[0]);
+    setActualDate(hoyLocal());
     setCurrentPerson(null);
     setLastCaseId(null);
     setPrintSnapshot(null);
@@ -108,20 +111,14 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
         const currentYear = now.getFullYear();
 
         const filtered = data.filter(alerta => {
-          if (!alerta.fecha) return false;
-          const d = new Date(alerta.fecha);
-          return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+          const d = parseFechaLocal(alerta.fecha);
+          return d && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
         });
 
         if (filtered.length > 0) {
-          console.log("Alertas encontradas:", filtered);
           setSocialAlerts(filtered);
           setShowModal(true);
-        } else {
-          console.log("No se encontraron alertas para esta persona.");
         }
-      } else {
-        console.log("No se encontraron alertas para esta persona.");
       }
     } catch (e) {
       console.error("Error al buscar alertas sociales:", e);
@@ -137,7 +134,8 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
     let { data: person } = await supabase.from('persons').select('*').eq('dni', dniNorm).maybeSingle();
 
     if (!person) {
-      const { data: lastCase } = await supabase.from('cases').select('*').ilike('dni', `%${dniNorm}%`).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      // Búsqueda EXACTA: antes usaba ilike %dni% y el DNI 1234567 coincidía con 21234567.
+      const { data: lastCase } = await supabase.from('cases').select('*').in('dni', [dniNorm, dniConPuntos(dniNorm)]).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (lastCase) {
         const { data: newP } = await supabase.from('persons').insert({
           dni: normalizeDni(lastCase.dni),
@@ -164,7 +162,19 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
     const { id, value } = e.target;
     setFormData(prev => ({ ...prev, [id]: value }));
     if (id === 'dni' && currentPerson && normalizeDni(value) !== currentPerson.dni) {
+      // Cambió el DNI: se descartan los datos de la persona anterior para no guardarlos con otro DNI.
       setCurrentPerson(null);
+      setFormData(prev => ({
+        ...prev,
+        dni: value,
+        apellidoNombre: '',
+        fechaNac: '',
+        telefono: '',
+        domicilio: '',
+        estadoCivil: '',
+        trabaja: '',
+      }));
+      setStatus({ person: '', case: '' });
     }
   };
 
@@ -175,25 +185,18 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
 
     try {
       const dniNorm = normalizeDni(formData.dni);
+      if (dniNorm.length < 7) throw new Error('El DNI debe tener al menos 7 dígitos.');
       
-      // 1) Upsert de Persona (onConflict: 'dni')
-      const { data: person, error: pError } = await supabase
-        .from('persons')
-        .upsert({
-          dni: dniNorm,
-          apellido_nombre: formData.apellidoNombre,
-          fecha_nacimiento: formData.fechaNac || null,
-          domicilio: formData.domicilio || null,
-          telefono: formData.telefono || null,
-          estado_civil: formData.estadoCivil || null,
-          trabaja_actualmente: formData.trabaja || null,
-          updated_at: new Date().toISOString()
-        }, { 
-          onConflict: 'dni',
-          ignoreDuplicates: false 
-        })
-        .select('id, apellido_nombre, dni')
-        .single();
+      // 1) Guardar persona sin pisar datos existentes con campos vacíos
+      const { data: person, error: pError } = await guardarPersona({
+        dni: dniNorm,
+        apellido_nombre: formData.apellidoNombre,
+        fecha_nacimiento: formData.fechaNac,
+        domicilio: formData.domicilio,
+        telefono: formData.telefono,
+        estado_civil: formData.estadoCivil,
+        trabaja_actualmente: formData.trabaja,
+      });
 
       if (pError) throw pError;
 
@@ -277,13 +280,6 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
       setLoading(false);
     }
   };
-
-  const escapeHtml = (value) => String(value ?? '-')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 
   const handlePrint = async () => {
     const printableCaseId = lastCaseId || printSnapshot?.caseId;
@@ -430,16 +426,6 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
     }, 500);
   };
 
-  const calcularEdad = (fechaNac) => {
-    if (!fechaNac) return null;
-    const hoy = new Date();
-    const nac = new Date(fechaNac);
-    let edad = hoy.getFullYear() - nac.getFullYear();
-    const m = hoy.getMonth() - nac.getMonth();
-    if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
-    return edad >= 0 ? edad : null;
-  };
-
   if (!profile) {
     return (
       <section className="card flex items-center justify-center p-12">
@@ -491,6 +477,8 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
                   placeholder="DNI sin puntos" 
                   value={formData.dni} 
                   onChange={handleInputChange}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); findPerson(); } }}
+                  inputMode="numeric"
                   required
                 />
                 <button 
@@ -530,7 +518,7 @@ const NewCaseForm = ({ profile, areas, currentPerson, setCurrentPerson, lastCase
                 <div className="flex items-center gap-1.5 bg-accent/10 border border-accent/20 
                                 rounded-xl px-3 py-2 shrink-0">
                   <span className="text-lg font-black text-accent leading-none">
-                    {calcularEdad(formData.fechaNac) !== null ? calcularEdad(formData.fechaNac) : '-'}
+                    {calcularEdad(formData.fechaNac) ?? '-'}
                   </span>
                   <span className="text-[10px] text-muted uppercase tracking-widest leading-tight">
                     años

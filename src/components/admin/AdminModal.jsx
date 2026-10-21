@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, crearClienteTemporal } from '../../lib/supabase';
+
+// Textos legibles para la bitácora de auditoría
+const ACCIONES = { INSERT: 'Alta', UPDATE: 'Cambio', DELETE: 'Baja' };
+const ENTIDADES = {
+  persons: 'Persona', cases: 'Caso', family_members: 'Familiar', audiencias: 'Audiencia', profiles: 'Usuario', areas: 'Área',
+  as_construyendo_techo: 'Construyendo Techo', as_funebre: 'Servicio Fúnebre', as_modulos_alimenticios: 'Módulos Alimenticios',
+  as_viajes_movil: 'Viaje Móvil', case_prestaciones: 'Prestación', cic_combustible: 'Combustible', cic_economico: 'Ayuda Económica',
+  cic_medicamentos: 'Ayuda Medicamentos', cic_pasajes: 'Pasajes', farmacia_pacientes: 'Paciente Farmacia',
+  farmacia_medicamentos: 'Medicación Farmacia', farmacia_entregas: 'Entrega Farmacia',
+};
 
 const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
   const [activeTab, setActiveTab] = useState('users');
@@ -17,7 +27,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
     if (isOpen) {
       loadAvailableAreas();
       if (activeTab === 'users') loadUsers();
-      if (activeTab === 'audit') loadAudit();
+      if (activeTab === 'audit') { loadAudit(); loadUsers(); }
     }
   }, [isOpen, activeTab]);
 
@@ -35,7 +45,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
       .order('full_name');
     
     if (error) setStatus(`Error: ${error.message}`);
-    else setUsers(data || []);
+    else { setUsers(data || []); setStatus(''); }
     setLoading(false);
   };
 
@@ -49,13 +59,18 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
       .limit(50);
     
     if (error) setStatus(`Error: ${error.message}`);
-    else setAuditLogs(data || []);
+    else { setAuditLogs(data || []); setStatus(''); }
     setLoading(false);
   };
 
   const handleUpdateUser = async (userId, updates) => {
-    const { error } = await supabase.from('profiles').update(updates).eq('user_id', userId);
-    if (!error) loadUsers();
+    if (updates.is_active === false && !window.confirm('¿Suspender este usuario? Pierde el acceso de inmediato.')) return;
+    const { data, error } = await supabase.from('profiles').update(updates).eq('user_id', userId).select('user_id');
+    // Antes un error (o un cambio sin permiso) pasaba en silencio
+    if (error) { setStatus(`Error: ${error.message}`); return; }
+    if (!data || data.length === 0) { setStatus('No se pudo guardar el cambio (sin permiso).'); return; }
+    setStatus('Cambio guardado.');
+    loadUsers();
   };
 
   const handleCreateUser = async (e) => {
@@ -64,46 +79,33 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
     setStatus('Procesando registro...');
     
     try {
-      // 1. Crear usuario en Auth de Supabase
-      const { data, error: authError } = await supabase.auth.signUp({
+      // 1. Crear usuario en Auth con un cliente temporal (no toca la sesión del admin)
+      const { data, error: authError } = await crearClienteTemporal().auth.signUp({
         email: newUser.email,
         password: newUser.password,
-        options: {
-          data: {
-            full_name: newUser.fullName,
-            area_id: newUser.areaId || null,
-            role: newUser.role || 'operator'
-          }
-        }
+        options: { data: { full_name: newUser.fullName } },
       });
 
       if (authError) throw authError;
+      // Supabase devuelve un usuario sin identidades cuando el email ya existe
+      if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        throw new Error('Ese email ya está registrado.');
+      }
 
       if (data?.user) {
-        // 2. Crear perfil en la tabla profiles
+        // 2. El trigger crea el perfil como operator INACTIVO (nadie elige su propio rol).
+        //    El superadmin, con su sesión, le asigna rol y área y lo activa.
         const { error: profileError } = await supabase
           .from('profiles')
-          .insert({
+          .upsert({
             user_id: data.user.id,
             full_name: newUser.fullName,
             role: newUser.role,
             default_area_id: newUser.areaId || null,
-            is_active: true
-          });
+            is_active: true,
+          }, { onConflict: 'user_id' });
 
-        // Si el insert falla porque el perfil ya existe (por un trigger de base de datos)
-        if (profileError && profileError.code === '23505') {
-          await supabase
-            .from('profiles')
-            .update({
-              full_name: newUser.fullName,
-              role: newUser.role,
-              default_area_id: newUser.areaId || null
-            })
-            .eq('user_id', data.user.id);
-        } else if (profileError) {
-          throw profileError;
-        }
+        if (profileError) throw profileError;
 
         setStatus('Usuario y perfil creados correctamente.');
         setIsAddingUser(false);
@@ -168,7 +170,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
           {['users', 'areas', 'audit'].map(tab => (
             <button 
               key={tab}
-              className={`py-4 text-[10px] md:text-xs uppercase font-black tracking-widest border-b-2 transition-all whitespace-nowrap min-h-[44px] ${activeTab === tab ? 'border-(--accent) text-(--accent)' : 'border-transparent text-(--muted) hover:text-white'}`}
+              className={`py-4 text-xs md:text-xs uppercase font-black tracking-widest border-b-2 transition-all whitespace-nowrap min-h-[44px] ${activeTab === tab ? 'border-(--accent) text-(--accent)' : 'border-transparent text-(--muted) hover:text-white'}`}
               onClick={() => setActiveTab(tab)}
             >
               {tab === 'users' ? 'Usuarios' : tab === 'areas' ? 'Áreas' : 'Auditoría'}
@@ -258,7 +260,47 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
                   </form>
                 </div>
               )}
-              <div className="tableWrap shadow-2xl overflow-x-auto">
+              {/* Celular: una tarjeta por usuario */}
+              <div className="md:hidden space-y-3">
+                {users.map(u => (
+                  <div key={u.user_id} className={`rounded-2xl border p-4 space-y-3 ${u.is_active ? 'bg-white/3 border-white/10' : 'bg-red-500/5 border-red-500/25'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-white text-base break-words">{u.full_name || 'Sin nombre'}</p>
+                        <p className="text-sm text-muted">{u.areas?.name || 'Sin área asignada'}</p>
+                      </div>
+                      <span className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-md border ${u.is_active ? 'bg-teal-500/10 text-teal-300 border-teal-500/30' : 'bg-red-500/10 text-red-300 border-red-500/30'}`}>
+                        {u.is_active ? 'Activo' : 'Suspendido'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label htmlFor={`rol-${u.user_id}`}>Rol</label>
+                        <select id={`rol-${u.user_id}`} className="tap" value={u.role} onChange={(e) => handleUpdateUser(u.user_id, { role: e.target.value })}>
+                          <option value="operator">Operador</option>
+                          <option value="admin">Administrador</option>
+                          <option value="superadmin">SuperAdmin</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor={`area-${u.user_id}`}>Área</label>
+                        <select id={`area-${u.user_id}`} className="tap" value={u.default_area_id || ''} onChange={(e) => handleUpdateUser(u.user_id, { default_area_id: e.target.value || null })}>
+                          <option value="">Sin área</option>
+                          {availableAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <button
+                      className={`${u.is_active ? 'danger' : 'primary'} tap w-full text-sm`}
+                      onClick={() => handleUpdateUser(u.user_id, { is_active: !u.is_active })}
+                    >
+                      {u.is_active ? 'Suspender' : 'Activar'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden md:block tableWrap shadow-2xl overflow-x-auto">
                 <table className="w-full min-w-[600px]">
                   <thead>
                     <tr><th>Usuario</th><th>Rol</th><th>Área Asignada</th><th>Estado</th><th>Acciones</th></tr>
@@ -323,7 +365,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
                   className="primary text-xs px-4! py-3! min-h-[44px]" 
                   onClick={() => setIsAddingArea(prev => !prev)}
                 >
-                  {isAddingArea ? 'Cancelar' : '[TEST] + Nueva Área'}
+                  {isAddingArea ? 'Cancelar' : '+ Nueva área'}
                 </button>
               </div>
 
@@ -366,16 +408,38 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
           {activeTab === 'audit' && (
             <div className="space-y-6">
               <h3 className="text-lg font-bold">Bitácora de Eventos</h3>
-              <div className="tableWrap shadow-2xl overflow-x-auto">
+              <div className="md:hidden space-y-2">
+                {auditLogs.length === 0 && <p className="text-sm text-muted text-center py-8">Sin eventos registrados.</p>}
+                {auditLogs.map(l => (
+                  <div key={l.id} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-white">
+                        {ACCIONES[l.action] || l.action} · {ENTIDADES[l.entity] || l.entity}
+                      </span>
+                      <span className="text-xs text-muted whitespace-nowrap">{new Date(l.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <p className="text-sm text-white/70 mt-0.5">
+                      {users.find(u => u.user_id === l.actor_id)?.full_name || (l.actor_id ? l.actor_id.slice(0, 8) : 'Sistema')}
+                    </p>
+                    {l.meta?.campos && <p className="text-xs text-muted mt-0.5">Cambió: {l.meta.campos.join(', ')}</p>}
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block tableWrap shadow-2xl overflow-x-auto">
                 <table className="w-full min-w-[600px]">
                   <thead><tr><th>Fecha / Hora</th><th>Acción</th><th>Entidad</th><th>Operador</th></tr></thead>
                   <tbody>
                     {auditLogs.map(l => (
                       <tr key={l.id}>
                         <td className="text-[11px] font-mono py-4 whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
-                        <td><span className="pill text-[10px] uppercase">{l.action}</span></td>
-                        <td className="text-xs text-(--muted)">{l.entity}</td>
-                        <td className="text-[10px] font-mono truncate max-w-[120px]">{l.actor_user_id}</td>
+                        <td><span className="pill text-[10px] uppercase">{ACCIONES[l.action] || l.action}</span></td>
+                        <td className="text-xs text-(--muted)">{ENTIDADES[l.entity] || l.entity}</td>
+                        <td className="text-xs">
+                          {users.find(u => u.user_id === l.actor_id)?.full_name || (l.actor_id ? l.actor_id.slice(0, 8) : 'Sistema')}
+                          {l.meta?.campos && (
+                            <span className="block text-[10px] text-(--muted)">Cambió: {l.meta.campos.join(', ')}</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -387,7 +451,7 @@ const AdminModal = ({ isOpen, onClose, areas, onRefreshAreas }) => {
         
         {/* Footer */}
         <div className="p-4 bg-black/20 text-center border-t border-white/5">
-          <p className="text-[10px] text-(--muted) font-bold uppercase tracking-widest">{status || 'Listo'}</p>
+          <p className="text-xs text-(--muted) font-semibold" role="status">{status || 'Listo'}</p>
         </div>
       </div>
     </div>
